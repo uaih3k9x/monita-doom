@@ -1631,8 +1631,10 @@ void G_DoSaveGame (void)
         save_stream = fopen(recovery_savegame_file, "wb");
         if (save_stream == NULL)
         {
-            I_Error("Failed to open either '%s' or '%s' to write savegame.",
-                    temp_savegame_file, recovery_savegame_file);
+            // MONITA-DOOM: 设备上文件系统只读 (存不了档), 提示一下接着玩, 不 I_Error 退出
+            players[consoleplayer].message = "CANNOT SAVE: READ-ONLY STORAGE";
+            gameaction = ga_nothing;
+            return;
         }
     }
 

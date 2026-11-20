@@ -44,7 +44,7 @@ static inline void dgc_row_copy(uint16_t *d, const uint16_t *s, uint32_t npx){
 }
 
 /* fb: 帧缓冲首地址 (u16, 行跨 stride 个像素); 目标区左上角 4 字节对齐 (x0 偶数) */
-static void dgc_blit(uint16_t *fb, uint32_t stride, const dgc_geom_t *g, const uint8_t *src, const uint16_t *lut){
+static inline void dgc_blit(uint16_t *fb, uint32_t stride, const dgc_geom_t *g, const uint8_t *src, const uint16_t *lut){
     uint16_t *row = fb + g->y0 * stride + g->x0;
     if (g->mode == DGC_SCALE2){
         for (uint32_t y = 0; y < DGC_H; y++, src += DGC_W, row += 2u * stride){
@@ -150,7 +150,7 @@ static inline void dgc_mix_set_vol(dgc_mixer_t *m, int c, int vol){
     if (c >= 0 && c < DGC_MIX_CH) m->ch[c].vol = vol < 0 ? 0 : vol > 127 ? 127 : vol;
 }
 /* 混 count 个样本进 out (覆盖写) */
-static void dgc_mix(dgc_mixer_t *m, int16_t *out, uint32_t count){
+static inline void dgc_mix(dgc_mixer_t *m, int16_t *out, uint32_t count){
     for (uint32_t i = 0; i < count; i++) out[i] = 0;
     for (int c = 0; c < DGC_MIX_CH; c++){
         dgc_chan_t *h = &m->ch[c];
