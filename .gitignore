@@ -1,0 +1,10 @@
+build/
+*.o
+*.bin
+*.elf
+*.wad
+*.WAD
+*.ppm
+*.png
+.public-safe.local
+__pycache__/
