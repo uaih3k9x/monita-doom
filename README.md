@@ -27,8 +27,10 @@ EC600U（UIS8910DM，Cortex-A5 约 500 MHz，单核，无浮点可用），原�
 | `port/dg_glue.c` | 依赖引擎头文件但和平台无关：大数组分配、画面输出、音效模块 |
 | `port/dg_headless.c` | 无界面平台层（Mac 主机版和 QEMU 测速版共用）：虚拟时钟、逐帧 CRC |
 | `port/libc/` | 精简 libc（设备和 QEMU 用）：文件只读，printf 进日志 |
-| `port/r05/` | 设备平台层（R05 app） |
-| `qemu/` | QEMU 裸机测速：半主机后端 + TCG 插件逐帧数指令 |
+| `port/r05/` | 设备平台层（R05 app），见 `port/r05/README.md` |
+| `qemu/` | QEMU 裸机测速（`run.sh`）；假 R05 内核跑要刷的 bin 本身（`r05_run.sh`） |
+| `host/doomkeys/` | Mac 键盘转发器（Swift，USB 接口 7 直连），顺便显示设备日志 |
+| `tools/put_wad.py` | 把 WAD 写进外挂 flash `EFS:/monita/`（要设备上跑着 extdump v2） |
 
 ## 构建和测试
 
@@ -39,6 +41,20 @@ sh qemu/run.sh <DOOM1.WAD> demo3         # QEMU 里跑 timedemo, 估帧率, 打�
 ```
 
 依赖：`cc`、`arm-none-eabi-gcc`、`qemu-system-arm`（Homebrew，带 TCG 插件头文件）、`pkg-config` + `glib`、`python3`。
+
+设备版：
+
+```sh
+MONITA_FW=~/code/Monita-CS80-lakala-wt-audio/fw sh port/r05/build.sh   # -> build/r05/doom.bin（无声）、doom_snd.bin（有声），带静态校验
+sh qemu/r05_run.sh <DOOM1.WAD> doom bench        # 假 R05 内核跑 doom.bin 本身：测速模式，打印 CRC 链，存 fb.ppm
+sh qemu/r05_run.sh <DOOM1.WAD> doom_snd maxms=20000   # 正常模式跑 20 s（虚拟时钟），看喇叭有没有被喂
+sh qemu/r05_run.sh - doom                        # 没有 WAD：应停在 E3
+sh qemu/r05_run.sh <DOOM1.WAD> doom avail=3600   # 堆不够：应停在 E2
+sh host/doomkeys/build.sh && build/doomkeys --selftest
+EXTFLASH_HOST=... python3 tools/tests/test_put_wad.py [DOOM1.WAD]  # 上传脚本对着 extdump v2 的内存假设备跑
+```
+
+`MONITA_FW` 指向一份 Monita 仓库的 `fw/`，用它的生成导入桩、打包、loader 规则校验脚本和 R05 导出表（不拷进本仓库）。
 
 ## 对拍基准
 
@@ -99,3 +115,64 @@ timedemo（不限速，每 tic 一帧），每帧指令平均 1.65–1.70 M，p9
 写帧缓冲一项按 2× 放大每帧写 512 000 B、PSRAM 写带宽约 64 MB/s 算，和指令时间有部分重叠，这里直接相加取保守值。
 Doom 游戏逻辑本身封顶 35 fps，所以估算结论是**能跑满 35 fps，余量约一倍**。没计入 XIP 取指和 cache 未命中，
 Doom 的代码和数据都远大于 cache，真机可能明显更慢。
+
+## 设备版
+
+- 单独的 app，刷进 app 槽 `0x60270000`，替换掉日用的 Monita 固件；玩完刷回去。
+- 无声版 `doom.bin` 不导入任何喇叭接口；有声版 `doom_snd.bin` 用 Monita fw v13 的喇叭路径，**那条路径本身还没上过真机**，先刷无声版。
+- 导入清单只有读类接口：外挂 flash 只挂载、只用 `"rb"` 打开；写 / 擦 / 格式化 / 写 NV 的接口一个都没有（构建时逐个点名校验）。
+  存档和改设置都存不了，菜单里存档会提示 `CANNOT SAVE: READ-ONLY STORAGE`。
+- WAD 依次找 `EFS:/monita/doom1.wad`、`EFS:/monita/freedoom1.wad`。共享版 `DOOM1.WAD` 4.0 MB 放得下（EFS 剩约 14 MiB）。
+  Freedoom 据我所知 20 MB 以上，大概率放不下（没核实；上传脚本写前会查空间）。
+
+屏幕下方的大字是状态：
+
+| 显示 | 意思 |
+|---|---|
+| `-`（白） | 开机先等 3 s：万一后面崩了反复重启，刷机工具还有窗口进下载模式 |
+| `E2`（红） | 内核堆不够：最大块放不下 2560 KiB 的 zone，或分完剩下不到 1.25 MiB |
+| `E3`（红） | 找不到 WAD |
+| `E4`（红） | Doom 出错退出（原因在 USB 日志里） |
+| 数字（绿） | 测速模式的结果（fps） |
+
+按键：
+
+| | Mac（`build/doomkeys` 窗口在前台） | 前面板 |
+|---|---|---|
+| 前进 / 后退 | ↑ / ↓ | `+` / `−` |
+| 转身 | ← / → | — |
+| 开火 | Ctrl | 查询键 |
+| 开门 / 确认 | 空格 / 回车 | `≡`（同时发两个） |
+| 菜单 | Esc | 长按 `≡` |
+| 跑 / 平移 | Shift / Option | — |
+
+测速模式：开机时按住 `≡`，直到中间的 `-` 消失。跑 `-timedemo demo3`（不限速），结束时屏上显示帧率，
+USB 日志里打 `CRC 链 ...` 和帧数、耗时。`CRC 链` 应该是 `2e1acd90 2173`。帧率里包含每帧多算的一次 64 KB CRC
+（约 0.3 M 条指令，1 ms 上下），所以实际游戏会比读数略快。
+
+QEMU 假内核跑 `doom.bin` 本身（测速模式）的结果：CRC 链 `2e1acd90`（和 QEMU 测速版一致），任务栈最深 1700 / 16384 B，
+内核堆峰值 2.78 MB（含 16 KiB 任务栈），每帧平均 1.78 M 条指令（比测速版多 0.08 M：D-cache clean 和 USB 轮询）。
+
+## 上真机
+
+由维护者亲手执行。三次刷写都只写 app 槽 `0x60270000`；EFS 只写 `EFS:/monita/`。
+
+1. 刷 extdump v2（维护者私有工具目录里 staged 的 `extdump_v2.bin`，sha256 `16264e24…`）。
+2. 上传 WAD：`EXTFLASH_HOST=<extdump v2 工具>/host python3 tools/put_wad.py --port COM5 DOOM1.WAD`（ThinkPad）。写速实测 183 KB/s，4 MB 约 25–60 s；
+   读回校验约 74 KB/s，再约 1 分钟。
+3. 刷 `build/r05/doom.bin`（无声版）。
+4. 上电：`-` 3 s → 标题画面。Mac 上先停日用上位机（它占着 USB 接口 7），再开 `build/doomkeys`。
+5. 测速：断电重上电时按住 `≡`，记下屏上帧率和日志里的 `CRC 链`。
+6. 想听声音再刷 `doom_snd.bin`；玩完刷回日用固件。
+
+万一刷进去以后开机就反复重启：3 s 窗口里刷机工具应该还能让模组进下载模式；再不行用整片备份
+`full_flash_0x60000000_8MiB_9c81936b.bin` 写回（见 Monita `docs/r05-notes.md`）。
+
+## 还没做
+
+- **撕裂**：单缓冲、不等帧头，写 2× 画面约 8 ms，屏幕扫一帧 26.6 ms，会看到撕裂。可以做"追光写入"（等帧事件后从扫描线后面写）。
+- 音乐（OPL / MIDI 合成在这颗 CPU 上不划算）。
+- 存档（EFS 只读）。
+- 2.5× 放大（`dg_core.h` 有，设备上没接）。
+- 段码屏和状态灯没用上。
+- Mac 转发器只在没有设备的情况下编译、自检过；Windows / Linux 没有转发器。
