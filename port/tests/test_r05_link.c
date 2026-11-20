@@ -112,25 +112,36 @@ static void test_log_ring(void){
 static void test_panel(void){
     dgc_keyq_init(&Q);
     int down; uint8_t key;
-    dl_panel(&Q, KEY_EV(3, KEY_DOWN));
+    dl_panel(&Q, KEY_EV(3, KEY_DOWN), 0);
     CHECK(dgc_key_pop(&Q, &down, &key) && key == 0xad && down, "+ 按下 = 前进");
-    dl_panel(&Q, KEY_EV(3, KEY_UP));
+    dl_panel(&Q, KEY_EV(3, KEY_UP), 0);
     CHECK(dgc_key_pop(&Q, &down, &key) && key == 0xad && !down, "+ 抬起");
-    dl_panel(&Q, KEY_EV(4, KEY_DOWN));
+    dl_panel(&Q, KEY_EV(4, KEY_DOWN), 0);
     CHECK(dgc_key_pop(&Q, &down, &key) && key == 0xaf && down, "- = 后退");
-    dl_panel(&Q, KEY_EV(1, KEY_DOWN));
+    dl_panel(&Q, KEY_EV(1, KEY_DOWN), 0);
     CHECK(dgc_key_pop(&Q, &down, &key) && key == 0xa3 && down, "查询 = 开火");
-    dl_panel(&Q, KEY_EV(2, KEY_DOWN));
-    int got_use = 0, got_enter = 0;
-    while (dgc_key_pop(&Q, &down, &key)){ if (key == 0xa2 && down) got_use++; if (key == 13 && down) got_enter++; }
-    CHECK(got_use == 1 && got_enter == 1, "≡ = 开门 + 确认 (%d %d)", got_use, got_enter);
-    dl_panel(&Q, KEY_EV(2, KEY_LONG));
+    /* ≡: 菜单外 = 开门 (标题画面上任何键都会打开菜单), 菜单里 = 确认; 只发一个键, 不然一按就开菜单又选中 New Game */
+    int got_use = 0, got_enter = 0, other = 0;
+    dl_panel(&Q, KEY_EV(2, KEY_DOWN), 0);
+    while (dgc_key_pop(&Q, &down, &key)){ if (key == 0xa2 && down) got_use++; else other++; }
+    CHECK(got_use == 1 && other == 0, "菜单外 ≡ = 只发开门 (%d %d)", got_use, other);
+    dl_panel(&Q, KEY_EV(2, KEY_DOWN), 1);
+    other = 0;
+    while (dgc_key_pop(&Q, &down, &key)){ if (key == 13 && down) got_enter++; else other++; }
+    CHECK(got_enter == 1 && other == 0, "菜单里 ≡ = 只发确认 (%d %d)", got_enter, other);
+    /* 抬起: 按下时发的是哪个, 抬起就发哪个 (按着的时候菜单开关了也不会漏抬) */
+    dl_panel(&Q, KEY_EV(2, KEY_DOWN), 0);
+    dl_panel(&Q, KEY_EV(2, KEY_UP), 1);
+    int use_up = 0;
+    while (dgc_key_pop(&Q, &down, &key)) if (key == 0xa2 && !down) use_up++;
+    CHECK(use_up == 1, "按下时是开门, 抬起也是开门 (%d)", use_up);
+    dl_panel(&Q, KEY_EV(2, KEY_LONG), 0);
     int esc_d = 0, esc_u = 0;
     while (dgc_key_pop(&Q, &down, &key)){ if (key == 27) { if (down) esc_d++; else esc_u++; } }
     CHECK(esc_d == 1 && esc_u == 1, "≡ 长按 = Esc 点一下 (%d %d)", esc_d, esc_u);
     /* 面板键不记进"主机按住的", 主机走了不会替它补抬起 */
     dl_init(&L, 0);
-    dl_panel(&Q, KEY_EV(3, KEY_DOWN));
+    dl_panel(&Q, KEY_EV(3, KEY_DOWN), 0);
     while (dgc_key_pop(&Q, &down, &key)) {}
     CHECK(dgc_key_release_host(&Q) == 0, "面板键不算主机键");
 }
@@ -143,11 +154,42 @@ static void test_zone_budget(void){
     CHECK(dl_zone_check(0, 0, 2560u << 10) == DL_MEM_BLOCK, "查询失败按 0 算");
 }
 
+static void test_zone_pick(void){
+    CHECK(dl_zone_pick(4360u << 10, 4350u << 10) == (2560u << 10), "够就 2560 KiB");
+    /* 真机单缓冲 + 开机已用掉约 120 KiB: 可用约 4140 KiB */
+    CHECK(dl_zone_pick(4140u << 10, 4130u << 10) == (2560u << 10), "真机估计值也是 2560 KiB");
+    CHECK(dl_zone_pick(3500u << 10, 3500u << 10) == (2048u << 10), "降一档 2048");
+    CHECK(dl_zone_pick(2900u << 10, 2900u << 10) == (1536u << 10), "再降 1536");
+    CHECK(dl_zone_pick(2700u << 10, 2700u << 10) == 0, "1536 都放不下 -> 0 (E2)");
+    CHECK(dl_zone_pick(8000u << 10, 2000u << 10) == (1536u << 10), "最大块限制");
+}
+
+static void test_no_64_multiple(void){
+    uint8_t b[64], t[4]; char txt[DL_LOG_RING * 2];
+    for (uint32_t len = 1; len < 700; len++){
+        dl_init(&L, 0); dgc_keyq_init(&Q);
+        char s[700]; memset(s, 'x', len);
+        dl_log(&L, s, len);
+        uint32_t n = frame(b, DL_HELLO, NULL, 0);
+        dl_rx(&L, b, n, 1, &Q);
+        static uint8_t buf[DL_TX_MAX];
+        uint32_t k, total = 0;
+        while ((k = dl_tx(&L, buf, sizeof buf, 1)) != 0){
+            if (k % 64u == 0){ CHECK(0, "日志 %u 字节时出了 %u 字节的帧 (64 的倍数)", len, k); return; }
+            if (buf[2] == DL_LOG) total += k - 10u;
+        }
+        if (total != len){ CHECK(0, "日志 %u 字节只发出 %u", len, total); return; }
+    }
+    (void)t; (void)txt;
+}
+
 int main(void){
     test_hello_key_ping();
     test_log_ring();
     test_panel();
     test_zone_budget();
+    test_zone_pick();
+    test_no_64_multiple();
     printf(fails ? "test_r05_link: %d FAIL\n" : "test_r05_link: OK\n", fails);
     return fails != 0;
 }

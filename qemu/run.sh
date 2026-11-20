@@ -1,5 +1,5 @@
 #!/bin/sh
-# QEMU 里跑 timedemo, 数每帧的指令数, 估算设备帧率 (粗估, 见 README "QEMU 估算")。
+# QEMU 里跑 timedemo, 数每帧的指令数, 估算设备帧率 (粗估, 见 README "QEMU 帧率估算")。
 #   sh qemu/run.sh <iwad> [demo3] [额外参数...]
 # 依赖: arm-none-eabi-gcc, qemu-system-arm (Homebrew, 带 TCG 插件), cc, pkg-config + glib, python3。
 # 产物在 build/qemu/: doom.elf, frames_<demo>.txt (每帧指令数), log_<demo>.txt (控制台, 含逐帧 CRC)。
@@ -44,7 +44,7 @@ cd "$WDIR"
   > "$B/log_$DEMO.txt" 2>&1 || true
 cd "$OLDPWD"
 grep -v '^CRC [0-9]' $B/log_$DEMO.txt | tail -6
-# 和 tools/host_check.sh 同格式的摘要 (ARM 基准见 README "对拍"; 和主机版不逐字一致, 原因也在那里)
+# 和 tools/host_check.sh 同格式的摘要 (ARM 基准见 README "对拍基准"; 和主机版不逐字一致, 原因也在那里)
 tics=$(grep -ho "timed [0-9]* gametics" $B/log_$DEMO.txt | head -1)
 echo "$DEMO: $tics, $(grep -c '^CRC [0-9]' $B/log_$DEMO.txt || true) 帧, CRC 摘要 $(grep "^CRC [0-9]" $B/log_$DEMO.txt | shasum -a 256 | cut -c1-16), $(grep -h "^CRC 链" $B/log_$DEMO.txt | cut -d" " -f1-3)"
 python3 -I qemu/report.py $B/frames_$DEMO.txt

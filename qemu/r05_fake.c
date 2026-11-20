@@ -8,7 +8,8 @@
  *     时钟是虚拟的 (sleep 加多少走多少, 每次读 +1 us)。
  *   - 结束: 日志里出现"测速:" / "exit " / "不启动" / "找不到 WAD" / "zone malloc 失败", 或虚拟时钟到 maxms:
  *     帧缓冲存 fb.ppm (800×1280), 打印任务栈用量 / 堆峰值 / 看门狗次数, 退出 QEMU。
- * 命令行 (半主机): fake [bench] [maxms=N] [avail=KiB] [maxblk=KiB]
+ * 命令行 (半主机): fake [bench] [safe] [maxms=N] [avail=KiB] [maxblk=KiB] [esc=MS] [hold21=A-B]
+ *   safe: 上电时 − (GPIO23) 按住; esc=MS: 虚拟时钟 MS 时注入主机的 Esc 按下, 150 ms 后抬起; hold21=A-B: ≡ (GPIO21) 在 A..B ms 按住
  *
  * Copyright (C) 2026 Monita-CS80 维护者
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -48,7 +49,8 @@ static uint32_t crc32(const uint8_t *p, uint32_t n){
 }
 
 /* ---- 配置 / 统计 ---- */
-static int g_bench;
+static int g_bench, g_safe;
+static uint32_t g_esc_ms, g_h21a, g_h21b;
 static uint32_t g_maxms = 60000, g_avail = 4360u << 10, g_maxblk = 4350u << 10;
 static uint64_t g_us;
 static uint32_t g_wdt_feeds, g_uart_writes, g_log_bytes, g_opens;
@@ -80,7 +82,12 @@ int fake_ql_pin_set_func(uint32_t pin, uint32_t f){ (void)pin; (void)f; return 0
 int fake_ql_gpio_init(uint32_t g, uint32_t d, uint32_t p, uint32_t l){ (void)g; (void)d; (void)p; (void)l; return 0; }
 int fake_ql_gpio_deinit(uint32_t g){ (void)g; return 0; }
 int fake_ql_gpio_set_level(uint32_t g, uint32_t l){ (void)g; (void)l; return 0; }
-int fake_ql_gpio_get_level(uint32_t g, uint8_t *lv){ *lv = (g == 21u && g_bench) ? 0u : 1u; return 0; }   /* 21 = ≡ */
+int fake_ql_gpio_get_level(uint32_t g, uint8_t *lv){
+    uint32_t ms = (uint32_t)(g_us / 1000u);
+    int down = (g == 21u && (g_bench || (ms >= g_h21a && ms < g_h21b))) || (g == 23u && g_safe);   /* 21 = ≡, 23 = − */
+    *lv = down ? 0u : 1u;
+    return 0;
+}
 int fake_ql_mipi_lcd_init(const void *cfg){ const uint32_t *c = cfg; if (c[0] != 800 || c[1] != 1280) die("lcd_init 参数不对"); return 0; }
 static uint32_t g_scan;
 int fake_ql_mipi_lcd_write_screen(void *fb){ g_scan = (uint32_t)fb; return 0; }
@@ -120,20 +127,28 @@ static uart_cb_t g_ucb;
 static uint8_t g_rxq[64]; static uint32_t g_rxn;
 static uint64_t g_ping_us;
 static int g_hello_sent;
-static void inject(uint8_t type){
+static void inject(uint8_t type, const uint8_t *pl, uint32_t n){
+    if (g_rxn + 10u + n > sizeof g_rxq) return;
     uint8_t *f = g_rxq + g_rxn;
-    f[0] = 0xA5; f[1] = 0x5A; f[2] = type; f[3] = 0; f[4] = 0; f[5] = 0;
-    uint32_t c = crc32(f + 2, 4);
-    f[6] = (uint8_t)c; f[7] = (uint8_t)(c >> 8); f[8] = (uint8_t)(c >> 16); f[9] = (uint8_t)(c >> 24);
-    g_rxn += 10;
+    f[0] = 0xA5; f[1] = 0x5A; f[2] = type; f[3] = 0; f[4] = (uint8_t)n; f[5] = 0;
+    for (uint32_t i = 0; i < n; i++) f[6 + i] = pl[i];
+    uint32_t c = crc32(f + 2, 4 + n);
+    f[6 + n] = (uint8_t)c; f[7 + n] = (uint8_t)(c >> 8); f[8 + n] = (uint8_t)(c >> 16); f[9 + n] = (uint8_t)(c >> 24);
+    g_rxn += 10u + n;
     if (g_ucb) g_ucb(0x82060001u, 4, g_rxn);
 }
+static int g_esc_state;
 int64_t fake_osiUpTimeUS(void){
     g_us++;
-    if (g_ucb && g_rxn + 10 <= sizeof g_rxq && g_us - g_ping_us >= 250000u){
+    if (g_ucb && g_us - g_ping_us >= 250000u){
         g_ping_us = g_us;
-        inject(g_hello_sent ? 0x7F : 0x01);
+        inject(g_hello_sent ? 0x7F : 0x01, 0, 0);
         g_hello_sent = 1;
+    }
+    if (g_ucb && g_esc_ms && g_esc_state < 2 && g_us / 1000u >= g_esc_ms + (g_esc_state ? 150u : 0u)){
+        uint8_t k[2] = { 27, (uint8_t)(g_esc_state ? 0 : 1) };
+        inject(0xA0, k, 2);
+        g_esc_state++;
     }
     return (int64_t)g_us;
 }
@@ -149,7 +164,7 @@ int fake_ql_uart_read(uint32_t port, void *buf, uint32_t n){
 }
 static char g_log[2048]; static uint32_t g_logn;
 static void check_log_line(const char *s, uint32_t n){
-    if (scontains(s, n, "测速:") || scontains(s, n, "exit ") || scontains(s, n, "不启动") ||
+    if (scontains(s, n, "测速:") || scontains(s, n, "exit ") || scontains(s, n, "不启动") || scontains(s, n, "安全模式") ||
         scontains(s, n, "找不到 WAD") || scontains(s, n, "zone malloc 失败")) finish(0);
 }
 int fake_ql_uart_write(uint32_t port, const void *data, uint32_t len){
@@ -310,6 +325,9 @@ void qemu_main(void){
             else if (sstarts(w, "maxms=")) g_maxms = atou(w + 6);
             else if (sstarts(w, "avail=")) g_avail = atou(w + 6) << 10;
             else if (sstarts(w, "maxblk=")) g_maxblk = atou(w + 7) << 10;
+            else if (seq(w, "safe")) g_safe = 1;
+            else if (sstarts(w, "esc=")) g_esc_ms = atou(w + 4);
+            else if (sstarts(w, "hold21=")){ g_h21a = atou(w + 7); const char *d = w + 7; while (*d && *d != '-') d++; if (*d) g_h21b = atou(d + 1); }
         }
     }
     load_and_run();

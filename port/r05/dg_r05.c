@@ -13,7 +13,9 @@
  * 输入: USB 上主机转发的键 (dg_link.h) + 前面板 4 键 (monita/keys_hw.h, dg_link.h 的 dl_panel)。
  * 声音: 只有 DG_SOUND_HW (有声版 doom_snd.bin) 才编进来; 音效混成 16 kHz 单声道喂给 monita/audio.h 的环形缓冲。
  * 测速: 开机时按住 ≡ -> -timedemo demo3; 结束时日志里打 "CRC 链" (应等于 QEMU 的 2e1acd90) 和帧率, 屏上显示帧率。
- * 状态显示 (屏幕中间的大数字): "-" 等 3 s (给刷机工具留进下载模式的窗口) / "E2" 内存不够 / "E3" 找不到 WAD /
+ * 安全模式: 按住 − 上电 -> 黄色 "--", 不挂 EFS、不启动 Doom, 只喂狗和响应 USB (万一 Doom 版开机就崩, 用它停住设备再刷)。
+ * 让出 CPU: 一帧里 Doom 自己没睡过 (测速、或跑不满 35 fps 时) 就在帧末睡 1 ms, 别让 prio 12 的任务一直占着。
+ * 状态显示 (屏幕下方的大字): "-" 等 3 s (给刷机工具留进下载模式的窗口) / "E2" 内存不够 / "E3" 找不到 WAD /
  *   "E4" Doom 出错退出 / 数字 = 测速帧率。详细原因看 USB 日志 (host/doomkeys)。
  *
  * Copyright (C) 2026 Monita-CS80 维护者
@@ -27,6 +29,7 @@
 #include "doomgeneric.h"
 #include "doomtype.h"
 #include "i_system.h"
+#include "doomstat.h"
 #include "dg_glue.h"
 #include "dgl_backend.h"
 
@@ -55,11 +58,11 @@ extern int ql_fclose(int fd);
 extern int ql_fsize(int fd);
 static const efs_ops_t g_efs_ops = { ql_fopen, ql_fread, ql_fseek, ql_fclose, ql_fsize };
 
-#define ZONE_BYTES   (2560u << 10)
 #define TASK_STACK   16384u
 #define BOOT_WAIT_MS 3000u
 #define PORT         R05_PORT_USB_MODEM
-#define KEY_GPIO_MENU 21u                 /* ≡ (monita/keys_hw.h) */
+#define KEY_GPIO_MENU  21u                /* ≡ (monita/keys_hw.h) */
+#define KEY_GPIO_MINUS 23u                /* − */
 
 static void   *g_task;
 static dl_t    g_link;
@@ -166,7 +169,7 @@ static void keys_poll(void){
     uint8_t ev[8];
     int n = keys_feed(&g_keys, t, keys_hw_raw(&g_pwr, t), ev, 8);
     if (g_bench) return;                                     /* 测速: 开机按住的 ≡ 会长按出 Esc, 回放中弹菜单就对不上 CRC 了 */
-    for (int i = 0; i < n; i++) dl_panel(&g_keyq, ev[i]);
+    for (int i = 0; i < n; i++) dl_panel(&g_keyq, ev[i], menuactive);
 }
 
 static void poll_io(void){
@@ -191,12 +194,15 @@ long dgl_fs_size(int h){ return efs_size(h); }
 void dgl_fs_close(int h){ efs_close(h); }
 int  dgl_fs_read(int h, uint32_t off, void *buf, uint32_t n){ return efs_read(h, off, buf, n); }
 
-static uint32_t g_frames, g_t0_ms, g_chain;
+static uint32_t g_frames, g_t0_ms, g_chain, g_yield_us, g_yields;
+static int g_slept;
 void dgl_exit(int code){
     if (g_bench){                                            /* timedemo 结束 (I_Error "timed ...", code -1) */
-        uint32_t ms = now_ms() - g_t0_ms, n = g_frames ? g_frames - 1u : 0;
+        uint32_t ms = now_ms() - g_t0_ms, n = g_frames ? g_frames - 1u : 0, yms = g_yield_us / 1000u;
         uint32_t f10 = ms ? (uint32_t)((uint64_t)n * 10000u / ms) : 0;
+        uint32_t g10 = ms > yms ? (uint32_t)((uint64_t)n * 10000u / (ms - yms)) : 0;
         printf("CRC 链 %08x %u\n", (unsigned)g_chain, (unsigned)g_frames);
+        printf("让出 CPU %u 次共 %u ms; 扣掉之后 %u.%u fps\n", (unsigned)g_yields, (unsigned)yms, (unsigned)(g10 / 10u), (unsigned)(g10 % 10u));
         printf("测速: 第一帧之后 %u 帧 / %u ms = %u.%u fps (每帧含逻辑、渲染、放大、clean cache、轮询 USB)\n", (unsigned)n, (unsigned)ms,
                (unsigned)(f10 / 10u), (unsigned)(f10 % 10u));
         char s[16];
@@ -234,14 +240,14 @@ void *realloc(void *p, size_t n){
 byte *DG_ZoneAlloc(int *size){
     uint32_t q[3] = { 0, 0, 0 };                             /* {total, avail, max_block} (Monita docs/r05-notes.md) */
     if (ql_dev_memory_size_query(q) != 0) q[1] = q[2] = 0;
-    int why = dl_zone_check(q[1], q[2], ZONE_BYTES);
-    printf("内核堆: 总 %u KiB, 可用 %u KiB, 最大块 %u KiB; zone %u KiB, 分完还要剩 %u KiB\n",
-           (unsigned)(q[0] >> 10), (unsigned)(q[1] >> 10), (unsigned)(q[2] >> 10), ZONE_BYTES >> 10, DL_RESERVE >> 10);
-    if (why){ printf("内存不够 (%s), 不启动\n", why == DL_MEM_BLOCK ? "最大块放不下 zone" : "分完剩下的太少"); halt("E2", 0xF800); }
-    byte *p = r05_kmalloc(ZONE_BYTES);
+    uint32_t zone = dl_zone_pick(q[1], q[2]);
+    printf("内核堆: 总 %u KiB, 可用 %u KiB, 最大块 %u KiB; zone 取 %u KiB (2560 / 2048 / 1536 里放得下的最大一档), 分完还要剩 %u KiB\n",
+           (unsigned)(q[0] >> 10), (unsigned)(q[1] >> 10), (unsigned)(q[2] >> 10), (unsigned)(zone >> 10), DL_RESERVE >> 10);
+    if (!zone){ printf("内存不够, 不启动\n"); halt("E2", 0xF800); }
+    byte *p = r05_kmalloc(zone);
     if (!p){ printf("zone malloc 失败\n"); halt("E2", 0xF800); }
     dg_glue_zone_ready();
-    *size = (int)ZONE_BYTES;
+    *size = (int)zone;
     return p;
 }
 
@@ -255,9 +261,15 @@ void DG_DrawFrame(void){
         dg_crc_chain(&g_chain, dg_frame_crc());
     }
     poll_io();
+    if (!g_slept){                                           /* 这一帧 Doom 没睡过: 让出 1 ms */
+        uint32_t t = now_us();
+        ql_rtos_task_sleep_ms(1);
+        g_yield_us += now_us() - t; g_yields++;
+    }
+    g_slept = 0;
 }
 
-void DG_SleepMs(uint32_t ms){ poll_io(); ql_rtos_task_sleep_ms(ms ? ms : 1); }
+void DG_SleepMs(uint32_t ms){ poll_io(); ql_rtos_task_sleep_ms(ms ? ms : 1); g_slept = 1; }
 uint32_t DG_GetTicksMs(void){ return now_ms(); }
 int DG_GetKey(int *pressed, unsigned char *key){
     int down; uint8_t k;
@@ -279,6 +291,12 @@ static void task_entry(void *arg){
     ql_uart_register_cb(PORT, uart_cb);
     g_keys_ok = (keys_hw_init() & 7u) == 0;
     keys_init(&g_keys); pwr_init(&g_pwr);
+    ql_rtos_task_sleep_ms(10);                               /* 等上拉稳定 */
+    uint8_t lv = 1;
+    if (ql_gpio_get_level(KEY_GPIO_MINUS, &lv) == 0 && lv == 0){
+        printf("安全模式 (上电时按住了 -): 不启动 Doom\n");
+        halt("--", 0xFFE0);
+    }
 #ifdef DG_SOUND_HW
     au_init(&g_au, g_au_ring, sizeof g_au_ring);
     g_audio_ok = audio_hw_init() == 0;
@@ -289,7 +307,7 @@ static void task_entry(void *arg){
 
     uint32_t t0 = now_ms();                                  /* 先等 3 s: 万一后面崩了反复重启, 刷机工具还有窗口 */
     while (now_ms() - t0 < BOOT_WAIT_MS){ poll_io(); ql_rtos_task_sleep_ms(20); }
-    uint8_t lv = 1;
+    lv = 1;
     g_bench = ql_gpio_get_level(KEY_GPIO_MENU, &lv) == 0 && lv == 0;
 
     int r1 = ql_spi6_ext_nor_flash_init();

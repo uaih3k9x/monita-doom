@@ -10,6 +10,7 @@ FW = os.environ.get("MONITA_FW")
 if not FW or not os.path.isfile(os.path.join(FW, "sdk", "validate.py")):
     sys.exit("要设 MONITA_FW=<Monita 仓库>/fw (需要 sdk/validate.py 和 sdk/r05_exports.csv)")
 sys.path.insert(0, os.path.join(FW, "sdk"))
+sys.dont_write_bytecode = True          # 别往 Monita 的工作树里写 __pycache__
 import validate as V  # noqa: E402
 
 DOOM = {

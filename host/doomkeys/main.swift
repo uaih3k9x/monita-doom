@@ -5,8 +5,9 @@
 //   build/doomkeys --selftest      只跑自检（帧编码 / 键位表），不碰 USB
 // 协议见 port/r05/dg_link.h：主机发 HELLO 0x01 / PING 0x7F（每 250 ms）/ KEY 0xA0 (u8 键, u8 按下)，
 // 设备回 HELLO_ACK 0x81 ("DOOM", u16 版本, u16 flags) 和 LOG 0xA8（文本）。
-// 键位：方向键走 / 转，Ctrl 开火，空格开门，Shift 跑，Option 平移，Esc 菜单，回车确认，数字换枪，
+// 键位：方向键走 / 转，Z 或 Ctrl 开火，空格开门，Shift 跑，Option 平移，Esc 菜单，回车确认，数字换枪，
 //       Tab 地图，F1–F12 同原版。按住 Command 的组合键不转发。窗口失焦时补发全部抬起。
+//       （macOS 默认 Ctrl+方向键切桌面、Ctrl+空格切输入法，会被系统截走，所以边走边开火用 Z。Z 不在任何秘籍里。）
 //
 // Copyright (C) 2026 Monita-CS80 维护者
 // SPDX-License-Identifier: GPL-2.0-or-later
@@ -62,6 +63,7 @@ let KEY_USE: UInt8 = 0xA2, KEY_FIRE: UInt8 = 0xA3
 let specialKeys: [UInt16: UInt8] = [
     123: 0xAC, 124: 0xAE, 125: 0xAF, 126: 0xAD,                 // ← → ↓ ↑
     36: 13, 76: 13, 53: 27, 48: 9, 51: 0x7F, 49: KEY_USE,       // 回车 / 小键盘回车 / Esc / Tab / Delete / 空格
+    6: KEY_FIRE,                                                // Z
     122: 0x80 + 0x3B, 120: 0x80 + 0x3C, 99: 0x80 + 0x3D, 118: 0x80 + 0x3E, 96: 0x80 + 0x3F, 97: 0x80 + 0x40,
     98: 0x80 + 0x41, 100: 0x80 + 0x42, 101: 0x80 + 0x43, 109: 0x80 + 0x44, 103: 0x80 + 0x57, 111: 0x80 + 0x58,   // F1–F12
 ]
@@ -93,6 +95,7 @@ func selftest() -> Int32 {
     var bad = encodeFrame(0xA8, [1]); bad[7] ^= 1
     check(p.feed(bad + encodeFrame(0xA8, [2])).map { $0.1 } == [[2]], "坏 CRC 丢掉、后面的照收")
     check(doomKey(keyCode: 126, chars: nil) == 0xAD && doomKey(keyCode: 49, chars: " ") == KEY_USE, "↑ / 空格")
+    check(doomKey(keyCode: 6, chars: "z") == KEY_FIRE, "Z = 开火")
     check(doomKey(keyCode: 16, chars: "Y") == UInt8(ascii: "y") && doomKey(keyCode: 18, chars: "1") == UInt8(ascii: "1"), "字母转小写 / 数字")
     check(doomKey(keyCode: 111, chars: nil) == 0x80 + 0x58 && doomKey(keyCode: 999, chars: "é") == nil, "F12 / 非 ASCII")
     print(fails == 0 ? "doomkeys 自检: OK" : "doomkeys 自检: \(fails) FAIL")
@@ -181,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "doomkeys：按键转发到 CS80"
         let v = KeyView(frame: window.contentRect(forFrameRect: window.frame))
         v.link = link
-        let label = NSTextField(labelWithString: "窗口在前台时按键转发给设备\n方向键走，Ctrl 开火，空格开门，Esc 菜单")
+        let label = NSTextField(labelWithString: "窗口在前台时按键转发给设备\n方向键走，Z 开火，空格开门，Esc 菜单")
         label.frame = NSRect(x: 16, y: 50, width: 390, height: 60)
         let st = NSTextField(labelWithString: "连接中…")
         st.frame = NSRect(x: 16, y: 16, width: 390, height: 24)

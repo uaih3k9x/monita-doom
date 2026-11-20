@@ -103,14 +103,21 @@ static inline uint32_t dl_tx(dl_t *l, uint8_t *out, uint32_t cap, uint32_t now){
     uint32_t n = l->log_wr - l->log_rd;
     if (!n) return 0;
     if (n > DL_LOG_CHUNK) n = DL_LOG_CHUNK;
+    /* 帧总长 (n + 10) 正好是 64 的倍数时少发 1 字节: USB 满包结尾没有零长包时, 主机的读请求可能一直等着,
+       最后几行日志就卡住了 (Monita 在主机 -> 设备方向为同类问题补过 0x00, 这边没验证过, 直接避开) */
+    if ((n + LK_HDR + LK_TRAIL) % 64u == 0) n--;
     for (uint32_t i = 0; i < n; i++) pl[i] = (uint8_t)l->log[(l->log_rd + i) & (DL_LOG_RING - 1u)];
     l->log_rd += n;
     return lk_encode(out, DL_LOG, 0, pl, n);
 }
 
 /* ---- 前面板 4 键 (monita/keys.h 的事件) -> Doom 键 ----
- *   1 查询 (PWRKEY) = 开火;  2 ≡ = 开门 + 确认, 长按 = Esc (菜单);  3 + = 前进;  4 − = 后退 */
-static inline void dl_panel(dgc_keyq_t *q, uint8_t ev){
+ *   1 查询 (PWRKEY) = 开火;  3 + = 前进;  4 − = 后退;
+ *   2 ≡ = 菜单外开门、菜单里确认 (只发一个键: 标题画面上任何键都会打开菜单, 两个一起发就开菜单又选中 New Game);
+ *         长按 = Esc 点一下。抬起时发按下时发的那个键 (按着的时候菜单开关了也不会漏抬)。
+ * in_menu: Doom 的 menuactive。 */
+static uint8_t dl_menu_key_down;
+static inline void dl_panel(dgc_keyq_t *q, uint8_t ev, int in_menu){
     uint32_t k = KEY_EV_KEY(ev), t = KEY_EV_TYPE(ev);
     if (t == KEY_LONG){
         if (k == 2){ dgc_key_push(q, 27, 1, DGC_SRC_PANEL); dgc_key_push(q, 27, 0, DGC_SRC_PANEL); }
@@ -119,7 +126,11 @@ static inline void dl_panel(dgc_keyq_t *q, uint8_t ev){
     int down = t == KEY_DOWN;
     switch (k){
     case 1: dgc_key_push(q, 0xa3, down, DGC_SRC_PANEL); break;
-    case 2: dgc_key_push(q, 0xa2, down, DGC_SRC_PANEL); dgc_key_push(q, 13, down, DGC_SRC_PANEL); break;
+    case 2:
+        if (down) dl_menu_key_down = in_menu ? 13 : 0xa2;
+        if (dl_menu_key_down) dgc_key_push(q, dl_menu_key_down, down, DGC_SRC_PANEL);
+        if (!down) dl_menu_key_down = 0;
+        break;
     case 3: dgc_key_push(q, 0xad, down, DGC_SRC_PANEL); break;
     case 4: dgc_key_push(q, 0xaf, down, DGC_SRC_PANEL); break;
     default: break;
@@ -136,6 +147,13 @@ static inline void dl_panel(dgc_keyq_t *q, uint8_t ev){
 static inline int dl_zone_check(uint32_t avail, uint32_t maxblk, uint32_t zone){
     if (maxblk < zone + 4096u) return DL_MEM_BLOCK;
     if (avail < zone || avail - zone < DL_RESERVE) return DL_MEM_RESERVE;
+    return 0;
+}
+/* 从 2560 KiB 起逐档往下试 (ARM 上 1200 KiB 已能跑完 E1 全部地图, 见 README "内存预算"); 返回字节数, 0 = 都不行 */
+static inline uint32_t dl_zone_pick(uint32_t avail, uint32_t maxblk){
+    static const uint32_t kib[] = { 2560u, 2048u, 1536u };
+    for (unsigned i = 0; i < sizeof kib / sizeof kib[0]; i++)
+        if (!dl_zone_check(avail, maxblk, kib[i] << 10)) return kib[i] << 10;
     return 0;
 }
 

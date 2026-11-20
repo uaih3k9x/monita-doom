@@ -4,14 +4,11 @@
  *   - printf / fprintf(stdout|stderr) 进日志 (dgl_log_write, 设备上经 USB 发给主机);
  *   - 浮点格式 (%f %g %e) 不实现, 打印 "?" (只有 timedemo 的结束语和配置文件写回用到, 都不影响游戏);
  *   - malloc / free / realloc / calloc 由后端提供 (设备上直接是内核导出的同名函数)。
- * 后端接口见 dgl_backend.h。主机单测 port/tests/test_libc.c (DGL_TEST 时所有名字加 dgl_ 前缀, 不和系统 libc 冲突)。
+ * 后端接口见 dgl_backend.h。还没有单独的主机单测 (见 README "还没做"), 靠整机对拍间接覆盖。
  *
  * Copyright (C) 2026 Monita-CS80 维护者
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
-#ifdef DGL_TEST
-#include "dgl_test_names.h"
-#endif
 #include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
