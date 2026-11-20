@@ -142,6 +142,19 @@ byte *I_ZoneBase (int *size)
     // Specify the heap size, in MiB (default 16).
     //
 
+#ifdef DG_ZONE_HOOK
+    // MONITA-DOOM: zone 由平台层按实际可用内存给 (设备上是内核堆里拿得到的最大块减去给内核留的余量)
+    {
+        extern byte *DG_ZoneAlloc(int *size);
+        (void)p; (void)min_ram; (void)default_ram;
+        zonemem = DG_ZoneAlloc(size);
+        if (zonemem == NULL)
+            I_Error("DG_ZoneAlloc failed");
+        printf("zone memory: %p, %x allocated for zone\n", zonemem, *size);
+        return zonemem;
+    }
+#endif
+
     p = M_CheckParmWithArgs("-mb", 1);
 
     if (p > 0)

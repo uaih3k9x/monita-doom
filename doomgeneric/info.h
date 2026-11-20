@@ -1153,7 +1153,7 @@ typedef struct
     int misc2;
 } state_t;
 
-extern state_t	states[NUMSTATES];
+extern state_t*	states;	// MONITA-DOOM: 堆上的拷贝, D_InitInfoTables 填
 extern char *sprnames[];
 
 typedef enum {
@@ -1326,6 +1326,9 @@ typedef struct
 
 } mobjinfo_t;
 
-extern mobjinfo_t mobjinfo[NUMMOBJTYPES];
+extern mobjinfo_t* mobjinfo;	// MONITA-DOOM: 同上
+
+// MONITA-DOOM: 启动时调一次 (D_DoomMain, Z_Init 之前)
+void D_InitInfoTables(void);
 
 #endif

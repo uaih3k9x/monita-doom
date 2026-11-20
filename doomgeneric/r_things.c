@@ -278,7 +278,8 @@ void R_InitSpriteDefs (char** namelist)
 //
 // GAME FUNCTIONS
 //
-vissprite_t	vissprites[MAXVISSPRITES];
+// MONITA-DOOM: 改成启动时分配 (R_InitPlanes)
+vissprite_t*	vissprites;
 vissprite_t*	vissprite_p;
 int		newvissprite;
 

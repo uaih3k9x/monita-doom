@@ -57,7 +57,8 @@ typedef struct
 // from all players.
 //
 
-static ticcmd_set_t ticdata[BACKUPTICS];
+// MONITA-DOOM: 改成启动时分配 (D_RegisterLoopCallbacks)
+static ticcmd_set_t *ticdata;
 
 // The index of the next tic to be made (with a call to BuildTiccmd).
 
@@ -823,4 +824,7 @@ void TryRunTics (void)
 void D_RegisterLoopCallbacks(loop_interface_t *i)
 {
     loop_interface = i;
+    // MONITA-DOOM: ticdata 原先是静态数组
+    if (ticdata == NULL)
+        ticdata = DG_BigAlloc(sizeof(*ticdata) * BACKUPTICS, "ticdata");
 }

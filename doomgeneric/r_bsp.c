@@ -43,7 +43,8 @@ line_t*		linedef;
 sector_t*	frontsector;
 sector_t*	backsector;
 
-drawseg_t	drawsegs[MAXDRAWSEGS];
+// MONITA-DOOM: 改成启动时分配 (R_InitPlanes)
+drawseg_t*	drawsegs;
 drawseg_t*	ds_p;
 
 

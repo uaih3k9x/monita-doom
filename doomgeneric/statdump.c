@@ -28,6 +28,7 @@
 #include "m_argv.h"
 
 #include "statdump.h"
+#include "i_system.h"
 
 /* Par times for E1M1-E1M9. */
 static const int doom1_par_times[] =
@@ -54,7 +55,8 @@ static const char *player_colors[] =
 // Array of end-of-level statistics that have been captured.
 
 #define MAX_CAPTURES 32
-static wbstartstruct_t captured_stats[MAX_CAPTURES];
+// MONITA-DOOM: 只在 -statdump 时用, 改成用到时再分配
+static wbstartstruct_t *captured_stats;
 static int num_captured_stats = 0;
 
 #if ORIGCODE
@@ -334,6 +336,8 @@ void StatCopy(wbstartstruct_t *stats)
 {
     if (M_ParmExists("-statdump") && num_captured_stats < MAX_CAPTURES)
     {
+        if (captured_stats == NULL)
+            captured_stats = DG_BigAlloc(sizeof(*captured_stats) * MAX_CAPTURES, "captured_stats");
         memcpy(&captured_stats[num_captured_stats], stats,
                sizeof(wbstartstruct_t));
         ++num_captured_stats;

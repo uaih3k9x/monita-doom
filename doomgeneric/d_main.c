@@ -1176,6 +1176,7 @@ void D_DoomMain (void)
     I_PrintBanner(PACKAGE_STRING);
 
     DEH_printf("Z_Init: Init zone memory allocation daemon. \n");
+    D_InitInfoTables ();	// MONITA-DOOM: states / mobjinfo 拷到堆上
     Z_Init ();
 
 #ifdef FEATURE_MULTIPLAYER

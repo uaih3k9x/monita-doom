@@ -90,7 +90,8 @@ angle_t			clipangle;
 // maps the visible view angles to screen X coordinates,
 // flattening the arc to a flat projection plane.
 // There will be many angles mapped to the same X. 
-int			viewangletox[FINEANGLES/2];
+// MONITA-DOOM: 改成启动时分配 (R_InitPlanes)
+int*			viewangletox;
 
 // The xtoviewangleangle[] table maps a screen pixel
 // to the lowest viewangle that maps back to x ranges
@@ -99,7 +100,8 @@ angle_t			xtoviewangle[SCREENWIDTH+1];
 
 lighttable_t*		scalelight[LIGHTLEVELS][MAXLIGHTSCALE];
 lighttable_t*		scalelightfixed[MAXLIGHTSCALE];
-lighttable_t*		zlight[LIGHTLEVELS][MAXLIGHTZ];
+// MONITA-DOOM: 改成启动时分配 (R_InitPlanes)
+lighttable_t*		(*zlight)[MAXLIGHTZ];
 
 // bumped light from gun blasts
 int			extralight;			

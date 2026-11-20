@@ -156,7 +156,7 @@
 
 // ARMOR number pos.
 #define ST_ARMORWIDTH		3
-#define ST_ARMORX			221
+#define ST_ARMORX			221 // public-safe-ignore (MONITA-DOOM: 数值表, 不是地址)
 #define ST_ARMORY			171
 
 // Key icon positions.

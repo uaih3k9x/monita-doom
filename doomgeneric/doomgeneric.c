@@ -18,7 +18,8 @@ void doomgeneric_Create(int argc, char **argv)
 
 	M_FindResponseFile();
 
-	DG_ScreenBuffer = malloc(DOOMGENERIC_RESX * DOOMGENERIC_RESY * 4);
+	// MONITA-DOOM: 按像素类型分配 (CMAP256 时 1 字节/像素, 原来固定按 4 字节)
+	DG_ScreenBuffer = malloc(DOOMGENERIC_RESX * DOOMGENERIC_RESY * sizeof(pixel_t));
 
 	DG_Init();
 

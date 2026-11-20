@@ -34,6 +34,9 @@ void I_Init (void);
 // for the zone management.
 byte*	I_ZoneBase (int *size);
 
+// MONITA-DOOM: 原先静态的大数组在启动时用它分配 (清零; 失败 I_Error)
+void *DG_BigAlloc(size_t size, const char *what);
+
 boolean I_ConsoleStdout(void);
 
 

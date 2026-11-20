@@ -20,6 +20,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>	// MONITA-DOOM: memcpy
+#include "i_system.h"	// MONITA-DOOM: DG_BigAlloc
 
 // Data.
 #include "sounds.h"
@@ -124,7 +126,9 @@ void A_SpawnFly();
 void A_BrainExplode();
 
 
-state_t	states[NUMSTATES] = {
+// MONITA-DOOM: 初值表放只读区 (设备上在 Flash), 运行时的 states / mobjinfo 是堆上的拷贝
+// (G_InitNew 的 -fast / 噩梦难度会改 tics 和 speed, 不能直接用只读表)。见 D_InitInfoTables。
+static const state_t states_init[NUMSTATES] = {
     {SPR_TROO,0,-1,{NULL},S_NULL,0,0},	// S_NULL
     {SPR_SHTG,4,0,{A_Light0},S_NULL,0,0},	// S_LIGHTDONE
     {SPR_PUNG,0,1,{A_WeaponReady},S_PUNCH,0,0},	// S_PUNCH
@@ -1095,7 +1099,7 @@ state_t	states[NUMSTATES] = {
 };
 
 
-mobjinfo_t mobjinfo[NUMMOBJTYPES] = {
+static const mobjinfo_t mobjinfo_init[NUMMOBJTYPES] = {
 
     {		// MT_PLAYER
 	-1,		// doomednum
@@ -4660,3 +4664,14 @@ mobjinfo_t mobjinfo[NUMMOBJTYPES] = {
     }
 };
 
+// MONITA-DOOM: 运行时可改的拷贝 (原先就是这两个全局数组)
+state_t *states;
+mobjinfo_t *mobjinfo;
+
+void D_InitInfoTables(void)
+{
+    states = DG_BigAlloc(sizeof(states_init), "states");
+    memcpy(states, states_init, sizeof(states_init));
+    mobjinfo = DG_BigAlloc(sizeof(mobjinfo_init), "mobjinfo");
+    memcpy(mobjinfo, mobjinfo_init, sizeof(mobjinfo_init));
+}

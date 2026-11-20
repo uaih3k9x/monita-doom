@@ -43,14 +43,16 @@ planefunction_t		ceilingfunc;
 
 // Here comes the obnoxious "visplane".
 #define MAXVISPLANES	128
-visplane_t		visplanes[MAXVISPLANES];
+// MONITA-DOOM: 大数组改成启动时分配 (设备 app RAM 窗口只有 128 KiB)
+visplane_t*		visplanes;
 visplane_t*		lastvisplane;
 visplane_t*		floorplane;
 visplane_t*		ceilingplane;
 
 // ?
 #define MAXOPENINGS	SCREENWIDTH*64
-short			openings[MAXOPENINGS];
+// MONITA-DOOM: 同上
+short*			openings;
 short*			lastopening;
 
 
@@ -93,7 +95,13 @@ fixed_t			cachedystep[SCREENHEIGHT];
 //
 void R_InitPlanes (void)
 {
-  // Doh!
+  // MONITA-DOOM: 原先是静态数组, 现在在这里一次性分配 (只在启动时调一次)
+  visplanes = DG_BigAlloc(sizeof(*visplanes) * MAXVISPLANES, "visplanes");
+  openings = DG_BigAlloc(sizeof(*openings) * MAXOPENINGS, "openings");
+  drawsegs = DG_BigAlloc(sizeof(*drawsegs) * MAXDRAWSEGS, "drawsegs");
+  vissprites = DG_BigAlloc(sizeof(*vissprites) * MAXVISSPRITES, "vissprites");
+  viewangletox = DG_BigAlloc(sizeof(*viewangletox) * (FINEANGLES/2), "viewangletox");
+  zlight = DG_BigAlloc(sizeof(*zlight) * LIGHTLEVELS, "zlight");
 }
 
 

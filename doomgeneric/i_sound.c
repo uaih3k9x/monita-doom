@@ -18,7 +18,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#if defined(FEATURE_SOUND) && !defined(__DJGPP__)
+// MONITA-DOOM: 不用 SDL (音效模块在 port/dg_glue.c)
+#if defined(FEATURE_SOUND) && !defined(__DJGPP__) && !defined(DG_NO_SDL)
 #include <SDL_mixer.h>
 #endif
 
