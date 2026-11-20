@@ -44,4 +44,7 @@ cd "$WDIR"
   > "$B/log_$DEMO.txt" 2>&1 || true
 cd "$OLDPWD"
 grep -v '^CRC' $B/log_$DEMO.txt | tail -5
+# 和 tools/host_check.sh 同格式的摘要 (ARM 基准见 README "对拍"; 和主机版不逐字一致, 原因也在那里)
+tics=$(grep -ho "timed [0-9]* gametics" $B/log_$DEMO.txt | head -1)
+echo "$DEMO: $tics, $(grep -c '^CRC' $B/log_$DEMO.txt || true) 帧, CRC 摘要 $(grep '^CRC' $B/log_$DEMO.txt | shasum -a 256 | cut -c1-16)"
 python3 -I qemu/report.py $B/frames_$DEMO.txt

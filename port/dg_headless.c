@@ -5,10 +5,11 @@
  *   - 时钟是虚拟的 (每帧 +28 ms, DG_SleepMs 照加), 所以同样的参数每次跑出来的帧序列一模一样 (含屏幕溶解效果)。
  *
  * 参数 (其余原样交给 Doom):
- *   -zonekb N      zone 大小 (KiB), 默认 3800 (≈ 设备上的估计值, 见 README)
+ *   -zonekb N      zone 大小 (KiB), 默认 2560 (= 设备上的取值, 见 README "内存预算")
  *   -scale25       2.5× 放大 (默认 2×)
  *   -maxframes N   跑到第 N 帧就退出
  *   -crc           每帧打印 "CRC <帧号> <crc32>"
+ *   -rowcrc N      第 N 帧打印调色板 CRC 和每行画面 CRC ("ROW <行> <crc32>"), 对拍时定位差异
  *   -dump a,b,..   (主机版) 这些帧存成 frame_<n>.ppm (屏幕上半部 800×640)
  *   -wav FILE      (主机版) 混音输出存成 16 kHz 单声道 WAV
  *
@@ -32,7 +33,7 @@ static uint16_t *g_fb;
 static dgc_geom_t g_geom;
 static uint32_t g_vclock_ms;
 static uint32_t g_frame;
-static int g_zonekb = 3800, g_maxframes, g_crc;
+static int g_zonekb = 2560, g_maxframes, g_crc, g_rowcrc = -1;
 #ifdef DG_HOST
 static int g_dump[64], g_ndump;
 static FILE *g_wav;
@@ -108,6 +109,16 @@ void DG_DrawFrame(void){
         }
         printf("CRC %u %08x\n", (unsigned)g_frame, (unsigned)(c ^ 0xFFFFFFFFu));
     }
+    if ((uint32_t)g_rowcrc == g_frame){
+        uint32_t c = 0xFFFFFFFFu;
+        for (int i = 0; i < 256; i++){
+            uint8_t rgb[3] = { (uint8_t)colors[i].r, (uint8_t)colors[i].g, (uint8_t)colors[i].b };
+            c = crc32_upd(c, rgb, 3);
+        }
+        printf("PAL %08x\n", (unsigned)(c ^ 0xFFFFFFFFu));
+        for (uint32_t y = 0; y < DGC_H; y++)
+            printf("ROW %u %08x\n", (unsigned)y, (unsigned)(crc32_upd(0xFFFFFFFFu, (const uint8_t *)DG_ScreenBuffer + y * DGC_W, DGC_W) ^ 0xFFFFFFFFu));
+    }
 #ifdef DG_HOST
     for (int i = 0; i < g_ndump; i++) if ((uint32_t)g_dump[i] == g_frame) dump_ppm(g_frame);
     if (g_wav){
@@ -145,6 +156,7 @@ int main(int argc, char **argv){
         else if (!strcmp(argv[i], "-scale25")){ mode = DGC_SCALE25; take_arg(&argc, argv, i, 1); }
         else if (!strcmp(argv[i], "-maxframes") && i + 1 < argc){ g_maxframes = atoi(argv[i + 1]); take_arg(&argc, argv, i, 2); }
         else if (!strcmp(argv[i], "-crc")){ g_crc = 1; take_arg(&argc, argv, i, 1); }
+        else if (!strcmp(argv[i], "-rowcrc") && i + 1 < argc){ g_rowcrc = atoi(argv[i + 1]); take_arg(&argc, argv, i, 2); }
 #ifdef DG_HOST
         else if (!strcmp(argv[i], "-dump") && i + 1 < argc){
             char *s = argv[i + 1];

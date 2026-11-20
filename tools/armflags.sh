@@ -13,6 +13,6 @@ ARM_DEFS="-DCMAP256 -DDOOMGENERIC_RESX=320 -DDOOMGENERIC_RESY=200 -DFEATURE_SOUN
 ARM_COMMON="$ARM_ARCH -mlong-calls -mno-unaligned-access -ffreestanding -fno-common -ffunction-sections -fdata-sections \
   -fno-tree-loop-distribute-patterns -fno-tree-vectorize -nostdinc -isystem $ARM_GCCINC -Iport/libc/include -Idoomgeneric -Iport $ARM_DEFS"
 # 引擎 (上游代码): 关掉警告; 性能要紧, -O2
-ARM_CFLAGS_DOOM="$ARM_COMMON -O2 -std=gnu99 -w"
+ARM_CFLAGS_DOOM="$ARM_COMMON -O2 -std=gnu99 -w ${ARM_DOOM_EXTRA:-}"
 # 我们自己的代码: 警告当错误
 ARM_CFLAGS_PORT="$ARM_COMMON -O2 -std=gnu99 -Wall -Wextra -Werror -Wno-unused-parameter"
