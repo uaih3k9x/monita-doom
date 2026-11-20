@@ -187,7 +187,9 @@ QEMU 假内核跑 `doom.bin` 本身的结果（假内核按 Monita 笔记里的 
   ```
   应为 `1654d56e9c82364c4ab252b5c77a8a763be4ec41a34a95729786fe06431e10cf`。**对不上或者文件不在，就别往下做。**
 - 拷到 `..\dumps\`：`extdump_v2.bin`（sha256 `16264e24428640ca4bd70fd33be2bdeff3b35246d6fad113a46221494344e04e`）、
-  本仓库 `build/r05/doom.bin`、`build/r05/doom_snd.bin`（sha256 见交付报告，以最后一次构建为准；同样用 `certutil` 核对）。
+  本仓库 `build/r05/doom.bin`（sha256 `44fcfaba1f7778c2992b65707addfece6e247b40805c31e623bbc1b1ea54768e`）、
+  `build/r05/doom_snd.bin`（sha256 `9eace9ebed8f8205829221a1d6664cebd0c9093cd066931d1277a67deeeaf263`），同样用 `certutil` 核对。
+  构建里没有编进时间戳（源码里没有 `__DATE__` / `__TIME__`），干净重编逐字节相同；只改文档的提交不会让这两个值变。
 - 拷到 ThinkPad 任意目录：本仓库的 `tools/put_wad.py`、extdump v2 工具的 `host/` 整个目录、共享版 `DOOM1.WAD`
   （v1.9：sha1 `5b2e249b9c5133ec987b3ea77596381dc0d6bc1d`，sha256 `1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771`）。
 
