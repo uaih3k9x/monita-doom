@@ -5,7 +5,8 @@
  *     哈希不认识就报错退出; 然后调 enter, 再在一块 16 KiB 的"任务栈"上跑它建的任务。
  *   - 假接口: EFS 走半主机读真文件 (ql_fopen 收到非 "rb" 立即报错退出); 内核堆按真机单缓冲时的大小限额 (可用 4.36 MB);
  *     USB 先注入 HELLO, 之后每 250 ms (虚拟时钟) 一条 PING, 设备发来的 LOG 原样打到控制台;
- *     时钟是虚拟的 (sleep 加多少走多少, 每次读 +1 us)。
+ *     时钟 = 指令时间 (QEMU -icount, CNTVCT) + sleep 累计 (sleep 不真等, 直接往前拨)。
+ *     统计最长喂狗间隔 (从 ql_dev_cfg_wdt 起算, 同 monita-x86 的 qemu/r05sim.c)。
  *   - 结束: 日志里出现"测速:" / "exit " / "不启动" / "找不到 WAD" / "zone malloc 失败", 或虚拟时钟到 maxms:
  *     帧缓冲存 fb.ppm (800×1280), 打印任务栈用量 / 堆峰值 / 看门狗次数, 退出 QEMU。
  * 命令行 (半主机): fake [bench] [safe] [maxms=N] [avail=KiB] [maxblk=KiB] [esc=MS] [hold21=A-B]
@@ -52,11 +53,16 @@ static uint32_t crc32(const uint8_t *p, uint32_t n){
 static int g_bench, g_safe;
 static uint32_t g_esc_ms, g_h21a, g_h21b;
 static uint32_t g_maxms = 60000, g_avail = 4360u << 10, g_maxblk = 4350u << 10;
-static uint64_t g_us;
+static uint64_t g_us, g_sleep_us;
+static uint32_t g_wdt_last_ms, g_wdt_gap_max, g_wdt_cfg;
 static uint32_t g_wdt_feeds, g_uart_writes, g_log_bytes, g_opens;
 static uint8_t *g_stack_lo, *g_stack_hi;
 
 /* ---- 时钟 / 任务 / 看门狗 ---- */
+static uint64_t cntvct(void){ uint32_t lo, hi; __asm__ volatile("isb; mrrc p15, 1, %0, %1, c14" : "=r"(lo), "=r"(hi)); return ((uint64_t)hi << 32) | lo; }
+static uint32_t cntfrq(void){ uint32_t f; __asm__ volatile("mrc p15, 0, %0, c14, c0, 0" : "=r"(f)); return f; }
+static void tick(void){ g_us = cntvct() * 1000000u / cntfrq() + g_sleep_us; }
+static uint32_t now_ms_(void){ tick(); return (uint32_t)(g_us / 1000u); }
 int64_t fake_osiUpTimeUS(void);
 static void (*g_task_fn)(void *);
 static void *g_task_arg;
@@ -70,12 +76,18 @@ int fake_ql_rtos_task_create(void *p, uint32_t stack, uint8_t prio, const char *
     return 0;
 }
 int fake_ql_rtos_task_sleep_ms(uint32_t ms){
-    g_us += (uint64_t)ms * 1000u;
+    g_sleep_us += (uint64_t)ms * 1000u;
+    tick();
     if (g_us / 1000u > g_maxms){ puts_("假内核: 虚拟时钟到 maxms\n"); finish(0); }
     return 0;
 }
-int fake_ql_dev_cfg_wdt(uint32_t o){ (void)o; return 0; }
-int fake_ql_dev_feed_wdt(void){ g_wdt_feeds++; return 0; }
+int fake_ql_dev_cfg_wdt(uint32_t o){ g_wdt_cfg = o; g_wdt_last_ms = now_ms_(); return 0; }
+int fake_ql_dev_feed_wdt(void){
+    uint32_t t = now_ms_();
+    if (t - g_wdt_last_ms > g_wdt_gap_max) g_wdt_gap_max = t - g_wdt_last_ms;
+    g_wdt_last_ms = t; g_wdt_feeds++;
+    return 0;
+}
 
 /* ---- 引脚 / GPIO / 屏 / PWRKEY: 记一下就行 ---- */
 int fake_ql_pin_set_func(uint32_t pin, uint32_t f){ (void)pin; (void)f; return 0; }
@@ -83,7 +95,7 @@ int fake_ql_gpio_init(uint32_t g, uint32_t d, uint32_t p, uint32_t l){ (void)g; 
 int fake_ql_gpio_deinit(uint32_t g){ (void)g; return 0; }
 int fake_ql_gpio_set_level(uint32_t g, uint32_t l){ (void)g; (void)l; return 0; }
 int fake_ql_gpio_get_level(uint32_t g, uint8_t *lv){
-    uint32_t ms = (uint32_t)(g_us / 1000u);
+    uint32_t ms = now_ms_();
     int down = (g == 21u && (g_bench || (ms >= g_h21a && ms < g_h21b))) || (g == 23u && g_safe);   /* 21 = ≡, 23 = − */
     *lv = down ? 0u : 1u;
     return 0;
@@ -139,7 +151,7 @@ static void inject(uint8_t type, const uint8_t *pl, uint32_t n){
 }
 static int g_esc_state;
 int64_t fake_osiUpTimeUS(void){
-    g_us++;
+    tick();
     if (g_ucb && g_us - g_ping_us >= 250000u){
         g_ping_us = g_us;
         inject(g_hello_sent ? 0x7F : 0x01, 0, 0);
@@ -213,6 +225,7 @@ int fake_ql_fread(void *buf, uint32_t size, uint32_t count, int fd){
     int left = sh_call(SYS_READ, r);
     uint32_t got = n - (uint32_t)left;
     g_fd[fd].pos += got;
+    g_sleep_us += got / 11u + 20u;                         /* 真机读外挂 flash 的耗时: 按随机 4K 实测 11.7 MB/s 取 11 B/us, 每次调用另加 20 us */
     return (int)got;
 }
 int fake_ql_fseek(int fd, int32_t off, int32_t whence){ fdh(fd); if (whence != 0 || off < 0) return -1; g_fd[fd].pos = (uint32_t)off; return 0; }
@@ -256,7 +269,8 @@ static void finish(int code){
     puts_("\n假内核: 结束 code="); putu((uint32_t)code);
     puts_("; 任务栈用了 "); putu((uint32_t)(g_stack_hi - p)); puts_(" / "); putu(g_task_stack);
     puts_(" B; 内核堆峰值 "); putu(g_peak); puts_(" B (限额 "); putu(g_avail); puts_(")");
-    puts_("; 看门狗 "); putu(g_wdt_feeds); puts_(" 次; USB 写 "); putu(g_uart_writes); puts_(" 帧, 日志 "); putu(g_log_bytes);
+    { uint32_t t = now_ms_(); if (g_wdt_cfg && t - g_wdt_last_ms > g_wdt_gap_max) g_wdt_gap_max = t - g_wdt_last_ms; }
+    puts_("; 看门狗 "); putu(g_wdt_feeds); puts_(" 次, 最长喂狗间隔 "); putu(g_wdt_gap_max); puts_(" ms; USB 写 "); putu(g_uart_writes); puts_(" 帧, 日志 "); putu(g_log_bytes);
     puts_(" B; 扫描基址 0x"); putx(g_scan); puts_("; 喇叭 open "); putu(g_pcm_opens); puts_(" 次 / "); putu(g_pcm_bytes); puts_(" B");
     puts_("; 虚拟时钟 "); putu((uint32_t)(g_us / 1000u)); puts_(" ms\n");
     uint32_t e[2] = { 0x20026, (uint32_t)code }; sh_call(SYS_EXIT, e);

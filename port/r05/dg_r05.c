@@ -172,9 +172,14 @@ static void keys_poll(void){
     for (int i = 0; i < n; i++) dl_panel(&g_keyq, ev[i], menuactive);
 }
 
-static void poll_io(void){
+/* 每秒喂一次 (同 Monita)。除了每帧, 读文件时也调: 启动和换关时 Doom 连着读一大串 lump, 中间不出帧 */
+static void wdt_poll(void){
     uint32_t t = now_ms();
     if (t - g_wdt_at >= 1000u){ ql_dev_feed_wdt(); g_wdt_at = t; }
+}
+
+static void poll_io(void){
+    wdt_poll();
     link_poll();
     keys_poll();
     audio_poll();
@@ -192,7 +197,7 @@ void dgl_log_write(const char *s, size_t n){ dl_log(&g_link, s, n); }
 int  dgl_fs_open(const char *path){ return efs_open(path); }
 long dgl_fs_size(int h){ return efs_size(h); }
 void dgl_fs_close(int h){ efs_close(h); }
-int  dgl_fs_read(int h, uint32_t off, void *buf, uint32_t n){ return efs_read(h, off, buf, n); }
+int  dgl_fs_read(int h, uint32_t off, void *buf, uint32_t n){ wdt_poll(); return efs_read(h, off, buf, n); }
 
 static uint32_t g_frames, g_t0_ms, g_chain, g_yield_us, g_yields;
 static int g_slept;

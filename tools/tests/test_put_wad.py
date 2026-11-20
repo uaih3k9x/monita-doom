@@ -15,8 +15,8 @@ WAD = sys.argv.pop(1) if len(sys.argv) > 1 else None
 
 
 class T(unittest.TestCase):
-    def run_put(self, data, extra=(), total=8 << 20):
-        dev = FakeDevice(STOCK, total=total)
+    def run_put(self, data, extra=(), total=8 << 20, files=STOCK):
+        dev = FakeDevice(files, total=total)
         L.open_transport = lambda spec, baud=115200: dev
         with tempfile.NamedTemporaryFile(suffix=".wad", delete=False) as f:
             f.write(data)
@@ -55,6 +55,15 @@ class T(unittest.TestCase):
         dev, code = self.run_put(b"IWAD" + os.urandom(200 * 1024), total=300 * 1024)
         self.assertNotEqual(code, 0)
         self.assertEqual(set(dev.fs), set(STOCK))
+
+    def test_no_space_while_part_and_old_coexist(self):
+        # 旧 WAD 200 KiB 已在设备上; 新 WAD 200 KiB。删掉旧的再算够, 但写 .part 时新旧同时在, 剩余会低于 256 KiB
+        old = {**STOCK, "EFS:/monita/doom1.wad": b"IWAD" + b"o" * (200 * 1024)}
+        used = sum(len(v) for v in old.values())
+        new = b"IWAD" + os.urandom(200 * 1024)
+        dev, code = self.run_put(new, total=used + 400 * 1024, files=old)
+        self.assertNotEqual(code, 0, "写 .part 期间剩余 = 400K - 200K < 256K, 应该拒绝")
+        self.assertEqual(dev.fs["EFS:/monita/doom1.wad"], old["EFS:/monita/doom1.wad"], "旧文件原样")
 
 
 if __name__ == "__main__":

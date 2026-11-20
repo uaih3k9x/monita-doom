@@ -2,6 +2,7 @@
 # 在 QEMU 里跑要刷的设备 app 本身 (build/r05/<目标>.bin), 底下是假 R05 内核 (qemu/r05_fake.c)。不连设备。
 #   sh qemu/r05_run.sh <WAD> [doom|doom_snd] [bench] [maxms=N] [avail=KiB] [maxblk=KiB]
 # WAD 传 - 表示不放 (测找不到 WAD 的路径)。WAD 会以 doom1.wad 的名字放进临时目录 (= 设备上的 EFS:/monita/doom1.wad)。
+# 时钟: -icount shift=ICOUNT_SHIFT (默认 2 = 每条指令 4 ns, 约 250 MIPS, 偏悲观) 加上 sleep 累计; 用来量最长喂狗间隔。
 # 产物在 build/r05q/<目标>/: fb.ppm (结束时的 800×1280 帧缓冲), log.txt, frames.txt (bench 时每帧指令数, 不含 CRC)。
 set -eu
 cd "$(dirname "$0")/.."
@@ -39,7 +40,7 @@ sym(){ arm-none-eabi-nm build/r05/$T.elf | awk -v s="$1" '$3 == s { print "0x" $
 ARGS=""; for a in "$@"; do ARGS="$ARGS,arg=$a"; done
 rm -f $O/doom1.wad; [ "$WAD" = - ] || cp "$WAD" $O/doom1.wad
 cd $O && rm -f fb.ppm frames.txt
-qemu-system-arm -M virt -cpu cortex-a7 -m 1280 -nographic -monitor none -serial none \
+qemu-system-arm -M virt -cpu cortex-a7 -m 1280 -nographic -monitor none -serial none -icount shift=${ICOUNT_SHIFT:-2},sleep=off \
   -semihosting-config enable=on,target=native,arg=fake$ARGS \
   -kernel $Q/fake_$T.elf -device loader,file=$(pwd)/../../r05/$T.bin,addr=0x60270000,force-raw=on \
   -plugin "$(cd ../../.. && pwd)/$SO,frame=$(cd ../../.. && sym DG_DrawFrame),pause=$(cd ../../.. && sym dg_frame_crc),resume=$(cd ../../.. && sym dg_crc_chain),out=$O/frames.txt" \

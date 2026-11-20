@@ -44,10 +44,12 @@ def main():
     print("INIT：", c.init())
     info = c.info()
     old = c.stat(path)
-    free_after = info["free"] + (old or 0) - len(data)
-    print("EFS 剩余 %.2f MiB；写完约剩 %.2f MiB（保留线 %d KiB）" % (info["free"] / 1048576, free_after / 1048576, RESERVE >> 10))
-    if free_after < RESERVE:
-        sys.exit("空间不够：写完会低于保留线，停手")
+    # 写 .part 的时候旧文件还在（写完才删旧、改名），所以要 剩余 - 新文件 >= 保留线（同 monita-x86 的 scripts/efs_put.py）
+    free_during = info["free"] - len(data)
+    print("EFS 剩余 %.2f MiB；写 .part 时最少剩 %.2f MiB，写完约剩 %.2f MiB（保留线 %d KiB）" % (
+        info["free"] / 1048576, free_during / 1048576, (free_during + (old or 0)) / 1048576, RESERVE >> 10))
+    if free_during < RESERVE:
+        sys.exit("空间不够：写 .part 时新旧两份同时在，会低于保留线，停手")
     c.arm()
     c.mkdir("EFS:/monita")                               # 已存在也无妨（固件只回 ret）
     t0 = time.time()

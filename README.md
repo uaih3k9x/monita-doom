@@ -11,9 +11,12 @@ EC600U（UIS8910DM，Cortex-A5 约 500 MHz，单核，无浮点可用），原�
 - `doomgeneric/`：上游 doomgeneric commit `e257a09`（GPL-2.0），导入提交 `4d69656` 未改动；
   之后的改动都标了 `MONITA-DOOM` 注释（`grep -rn MONITA-DOOM doomgeneric`）。
 - `port/`、`qemu/`、`tools/`：本项目新写，GPL-2.0-or-later。
-- 从 Monita-CS80-lakala（PolyForm Noncommercial）复用的代码**只限维护者本人写的那部分**，
-  由作者本人以 GPL-2.0-or-later 重新授权放进本仓库，逐个文件列在下面的"复用清单"里。
+- 从 Monita-CS80-lakala（PolyForm Noncommercial）复用的代码**只限维护者本人写的那部分**，逐个文件列在
+  `port/r05/README.md` 的"复用清单"里。这些文件按 GPL-2.0-or-later 放进本仓库**待维护者确认，确认前不公开**。
   拉卡拉 / 移远 / 紫光展锐的任何代码和素材都不在本仓库。
+- 构建设备 app 要用 Monita 仓库里的 `fw/sdk/gen_stubs.py`（生成导入桩）和 `pack.py`（打包 2PPA），以及 `validate.py`
+  和 R05 导出表（静态校验）；它们不在本仓库。按 GPL，分发二进制要能给出完整的对应源码（含构建脚本），
+  **公开发布前要先解决这个问题**（例如维护者把这两个脚本也授权进来，或在本仓库重写）。
 - **WAD 不进仓库**（`.gitignore` 拦了 `*.wad`）。用原版共享版 `DOOM1.WAD` 或 Freedoom，自己准备。
 
 复用清单（从 Monita-CS80-lakala 拷入的文件）：见 `port/r05/README.md`。
@@ -49,7 +52,7 @@ MONITA_FW=~/code/Monita-CS80-lakala-wt-audio/fw sh port/r05/build.sh   # -> buil
 sh qemu/r05_run.sh <DOOM1.WAD> doom bench        # 假 R05 内核跑 doom.bin 本身：测速模式，打印 CRC 链，存 fb.ppm
 sh qemu/r05_run.sh <DOOM1.WAD> doom_snd maxms=20000   # 正常模式跑 20 s（虚拟时钟），看喇叭有没有被喂
 sh qemu/r05_run.sh - doom                        # 没有 WAD：应停在 E3
-sh qemu/r05_run.sh <DOOM1.WAD> doom avail=3600   # 堆不够：应停在 E2
+sh qemu/r05_run.sh <DOOM1.WAD> doom avail=2800   # 堆不够：应停在 E2（avail=3600 会降到 2048 KiB 照常跑）
 sh host/doomkeys/build.sh && build/doomkeys --selftest
 EXTFLASH_HOST=... python3 tools/tests/test_put_wad.py [DOOM1.WAD]  # 上传脚本对着 extdump v2 的内存假设备跑
 ```
@@ -163,14 +166,89 @@ QEMU 假内核跑 `doom.bin` 本身的结果（假内核按 Monita 笔记里的 
 
 - 测速模式，堆按真机数字（可用 4258 KiB、最大块 4248 KiB）：zone 取 2560 KiB，CRC 链 `2e1acd90`（和 QEMU 测速版一致），
   任务栈最深 1708 / 16384 B，内核堆峰值 2.78 MB（含 16 KiB 任务栈），每帧平均 1.78 M 条指令（比测速版多 0.08 M：D-cache clean 和 USB 轮询）。
-- 堆只有 3500 KiB：降到 2048 KiB 照样跑完；更少：停在 E2。没 WAD：E3。按住 `−`：安全模式。
+- 堆只有 3500 KiB：降到 2048 KiB 照样跑完；2800 KiB：停在 E2。没 WAD：E3。按住 `−`：安全模式。
+- 喂狗（假内核时钟 = `-icount shift=2` 的指令时间，约 250 MIPS，加上 sleep 和按 11 B/µs 折算的读 flash 时间）：
+  测速模式最长喂狗间隔 1013 ms，正常模式跑 40 s（演示里有换关）1050 ms。设备每秒喂一次，读文件时也顺手喂，所以 1 s 是下限。
+  同一个时钟下测速 2172 帧用了 22.6 s，约 96 fps（含每帧让出的 1 ms 和 CRC；不模拟 cache，只是另一个粗估）。
 - 输入：注入主机的 Esc 帧 → 菜单出来；前面板 `≡` 短按（GPIO21 拉低 300 ms，经去抖）→ 菜单出来。
 - 有声版正常模式 20 s（虚拟时钟）：喇叭开流 1 次，写了 30 万字节。
 
 ## 上真机
 
-由维护者亲手执行，步骤和命令见交付报告。要点：三次刷写都只写 app 槽 `0x60270000`；EFS 只写 `EFS:/monita/`；
-先刷无声版；先测正常模式再测测速模式；开机反复重启时先试安全模式（按住 `−` 上电），再试 3 s 窗口，最后才是整片备份写回。
+由维护者亲手执行，下面的命令我（写代码的一方）都没有跑过。规则：三次刷写都只写 app 槽 `0x60270000`；EFS 只写 `EFS:/monita/`；
+先刷无声版；先测正常模式再测测速模式。刷写命令的格式抄自以往的刷机记录：在 ThinkPad 的 `win-flash\flash` 目录下用自带的
+`py\python.exe` 跑 `dump_flash.py`，bin 放在 `..\dumps\`。
+
+**0. 准备（在 ThinkPad 上）**
+
+- 先确认回滚文件在：`..\dumps\app_v12_tri_scale2.bin`（11-20 凌晨刷进去、现在在机的就是 v12），并核对 sha256：
+  ```
+  certutil -hashfile ..\dumps\app_v12_tri_scale2.bin SHA256
+  ```
+  应为 `1654d56e9c82364c4ab252b5c77a8a763be4ec41a34a95729786fe06431e10cf`。**对不上或者文件不在，就别往下做。**
+- 拷到 `..\dumps\`：`extdump_v2.bin`（sha256 `16264e24428640ca4bd70fd33be2bdeff3b35246d6fad113a46221494344e04e`）、
+  本仓库 `build/r05/doom.bin`、`build/r05/doom_snd.bin`（sha256 见交付报告，以最后一次构建为准；同样用 `certutil` 核对）。
+- 拷到 ThinkPad 任意目录：本仓库的 `tools/put_wad.py`、extdump v2 工具的 `host/` 整个目录、共享版 `DOOM1.WAD`
+  （v1.9：sha1 `5b2e249b9c5133ec987b3ea77596381dc0d6bc1d`，sha256 `1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771`）。
+
+**1. 刷 extdump v2**
+
+```
+py\python.exe dump_flash.py --restore ..\dumps\extdump_v2.bin --addr 0x60270000
+```
+
+**2. 上传 WAD**
+
+设备**断电再上电**，上电后**第一个**跑的 extflash 命令就是 `put_wad.py`，中间不要先跑 `extflash_v2.py info` 之类的别的命令：
+extdump v2 同一次上电里第二次 INIT 会失败（已知 bug），`put_wad.py` 自己会做那唯一一次 INIT。
+
+```
+set EXTFLASH_HOST=<extdump v2 工具>\host
+py\python.exe put_wad.py --port COM5 DOOM1.WAD
+```
+
+它会打印剩余空间（写 `.part` 时新旧两份同时在，剩余减去 WAD 大小要不少于 256 KiB，不够就停手），写入（约 183 KB/s，
+4 MB 约 25–60 s），整个读回比 sha256（约 74 KB/s，再约 1 分钟），最后打印"sha256 一致"。失败了就停下，别刷 Doom。
+如果要重试，先断电再上电。
+
+**3. 刷 Doom（无声版）**
+
+```
+py\python.exe dump_flash.py --restore ..\dumps\doom.bin --addr 0x60270000
+```
+
+上电：屏幕下方白色 `-` 停 3 s → 标题画面。前面板就能玩（`+`/`−` 前进后退，查询键开火，`≡` 开门 / 确认，长按 `≡` 出菜单）。
+
+**4. 接 Mac 键盘（可选）**
+
+Mac 上的 Monita 上位机（LaunchAgent `com.monita.cs80`）占着 USB 接口 7，先停掉它，再开转发器：
+
+```sh
+launchctl bootout gui/$(id -u)/com.monita.cs80
+cd ~/code/monita-doom && sh host/doomkeys/build.sh && build/doomkeys
+```
+
+`doomkeys` 窗口在前台时：方向键走，Z 开火，空格开门，Esc 菜单；终端里会打出设备日志（含内核堆、zone 取了多少）。
+
+**5. 测速**
+
+断电，按住 `≡` 上电，直到 `-` 消失再松手。跑完屏上显示 fps；`doomkeys` 终端里有 `CRC 链 ...`、帧数、耗时、让出 CPU 的时间。
+日志里 zone 取的是 2560 KiB 时，`CRC 链` 应该是 `2e1acd90 2173`。把这几行日志和屏上读数记下来。
+
+**6. 有声版（可选）**：同第 3 步刷 `..\dumps\doom_snd.bin`。
+
+**7. 刷回日用固件，恢复上位机**
+
+```
+py\python.exe dump_flash.py --restore ..\dumps\app_v12_tri_scale2.bin --addr 0x60270000
+```
+```sh
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.monita.cs80.plist
+```
+
+**万一刷完 Doom 开机就反复重启**：先断电，按住 `−` 上电（安全模式，屏上黄色 `--`，不启动 Doom），这时用第 7 步的命令刷回 v12；
+不行就试开机后 3 s 的窗口；再不行用整片备份 `full_flash_0x60000000_8MiB_9c81936b.bin` 以 `--addr 0x60000000` 写回
+（见 Monita `docs/r05-notes.md`）。
 
 **没在真机上验证过的**（都只在 QEMU / 假内核 / 单测里跑过）：
 
