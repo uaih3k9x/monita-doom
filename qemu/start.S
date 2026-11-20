@@ -31,3 +31,13 @@ _start:
 sh_call:
     svc   0x123456
     bx    lr
+
+/* void call_on_stack(fn, arg, sp_top): 换到 sp_top 上调 fn(arg), 不返回 (qemu/r05_fake.c 跑设备任务用) */
+    .global call_on_stack
+    .type call_on_stack, %function
+call_on_stack:
+    mov   sp, r2
+    mov   r3, r0
+    mov   r0, r1
+    blx   r3
+4:  b     4b

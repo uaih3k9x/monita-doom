@@ -1,0 +1,47 @@
+# monita-doom 有声版的 R05 导入清单 (一行一个名字; "符号 = 0x哈希" = 用另一个符号名导入这个哈希的导出)。
+# 只有读类接口: 外挂 flash 只挂载 + 只读打开 (ql_fopen 只会收到 "rb", 见 dg_efs.h); 写 / 擦 / 格式化 / NV 一个都没有。
+# tools/r05_validate.py 另有一份逐个点名的白名单, 两边对不上就 FAIL。
+# 引脚 / GPIO (大屏背光, 前面板键)
+ql_pin_set_func
+ql_gpio_init
+ql_gpio_deinit
+ql_gpio_set_level
+ql_gpio_get_level
+# 任务 / 时间 / 看门狗
+ql_rtos_task_create
+ql_rtos_task_sleep_ms
+ql_dev_cfg_wdt
+ql_dev_feed_wdt
+osiUpTimeUS
+# USB (port 4)
+ql_uart_open
+ql_uart_read
+ql_uart_write
+ql_uart_register_cb
+# 大屏
+ql_mipi_lcd_init
+ql_mipi_lcd_write_screen
+r05_lcd_pm_lock = 0xac3ae871
+# 内核堆: 内核的 malloc / free 换个符号名, 让 libc 自己的 malloc 用这个名字 (dg_r05.c)
+r05_kmalloc = 0xe3c52ebf
+r05_kfree = 0xad95d5fa
+ql_dev_memory_size_query
+# PWRKEY (前面板查询键)
+ql_pwrkey_shutdown_time_set
+ql_pwrkey_callback_register
+ql_pwrkey_press_cb_register
+ql_pwrkey_release_cb_register
+# 外挂 flash: 挂载 (内部 mount(0), 挂不上不格式化) + 只读
+ql_spi6_ext_nor_flash_init
+ql_spi6_ext_nor_flash_sffs_mount
+ql_fopen
+ql_fread
+ql_fseek
+ql_fclose
+ql_fsize
+# 喇叭 (同 Monita fw v13, 未上过真机): 只有播放路径; 会写 NV 的音量 / 校准接口不导入
+ql_set_audio_path_speaker
+ql_pcm_open
+ql_pcm_write
+ql_pcm_close
+ql_aud_data_done
