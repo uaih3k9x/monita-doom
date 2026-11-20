@@ -13,8 +13,8 @@ cd "$tmp"
 for d in demo1 demo2 demo3; do
   "$bin" -iwad "$wad" -timedemo $d -crc > out.txt 2> err.txt || true
   tics=$(grep -ho "timed [0-9]* gametics" out.txt err.txt | head -1)
-  frames=$(grep -c '^CRC' out.txt || true)
-  digest=$(grep '^CRC' out.txt | shasum -a 256 | cut -c1-16)
-  echo "$d: $tics, $frames 帧, CRC 摘要 $digest"
+  frames=$(grep -c '^CRC [0-9]' out.txt || true)
+  digest=$(grep '^CRC [0-9]' out.txt | shasum -a 256 | cut -c1-16)
+  echo "$d: $tics, $frames 帧, CRC 摘要 $digest, $(grep -h '^CRC 链' out.txt | cut -d' ' -f1-3)"
 done
 rm -rf "$tmp"

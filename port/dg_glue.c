@@ -61,6 +61,34 @@ void dg_present(uint16_t *fb, uint32_t stride, const dgc_geom_t *g)
     dgc_blit(fb, stride, g, (const uint8_t *)DG_ScreenBuffer, g_lut);
 }
 
+/* ---- 对拍 CRC ---- */
+uint32_t dg_crc32(uint32_t crc, const uint8_t *p, uint32_t n, int with_pal)
+{
+    static uint32_t tab[256];
+    if (!tab[1])
+        for (uint32_t i = 0; i < 256; i++) {
+            uint32_t v = i;
+            for (int k = 0; k < 8; k++) v = (v & 1u) ? (v >> 1) ^ 0xEDB88320u : v >> 1;
+            tab[i] = v;
+        }
+    uint32_t c = ~crc;
+    while (n--) c = (c >> 8) ^ tab[(c ^ *p++) & 0xFFu];
+    if (with_pal)
+        for (int i = 0; i < 256; i++) {
+            uint8_t rgb[3] = { (uint8_t)colors[i].r, (uint8_t)colors[i].g, (uint8_t)colors[i].b };
+            for (int k = 0; k < 3; k++) c = (c >> 8) ^ tab[(c ^ rgb[k]) & 0xFFu];
+        }
+    return ~c;
+}
+
+uint32_t dg_frame_crc(void){ return dg_crc32(0, (const uint8_t *)DG_ScreenBuffer, DGC_W * DGC_H, 1); }
+
+void dg_crc_chain(uint32_t *chain, uint32_t c)
+{
+    uint8_t b[4] = { (uint8_t)c, (uint8_t)(c >> 8), (uint8_t)(c >> 16), (uint8_t)(c >> 24) };
+    *chain = dg_crc32(*chain, b, 4, 0);
+}
+
 /* ---- 音效 ----
  * 每个通道记着它占着的 lump (PU_STATIC 锁住, 播完 / 被停后没有别的通道在用就放回 PU_CACHE, 让 zone 能回收)。 */
 static dgc_mixer_t g_mix;

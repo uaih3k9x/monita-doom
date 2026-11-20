@@ -8,7 +8,7 @@
  *   -zonekb N      zone 大小 (KiB), 默认 2560 (= 设备上的取值, 见 README "内存预算")
  *   -scale25       2.5× 放大 (默认 2×)
  *   -maxframes N   跑到第 N 帧就退出
- *   -crc           每帧打印 "CRC <帧号> <crc32>"
+ *   -crc           每帧打印 "CRC <帧号> <crc32>", 退出时打印 "CRC 链 <crc32> <帧数>" (设备测速模式打印同一行, 见 dg_glue.h)
  *   -rowcrc N      第 N 帧打印调色板 CRC 和每行画面 CRC ("ROW <行> <crc32>"), 对拍时定位差异
  *   -dump a,b,..   (主机版) 这些帧存成 frame_<n>.ppm (屏幕上半部 800×640)
  *   -wav FILE      (主机版) 混音输出存成 16 kHz 单声道 WAV
@@ -34,6 +34,7 @@ static dgc_geom_t g_geom;
 static uint32_t g_vclock_ms;
 static uint32_t g_frame;
 static int g_zonekb = 2560, g_maxframes, g_crc, g_rowcrc = -1;
+static uint32_t g_chain;
 #ifdef DG_HOST
 static int g_dump[64], g_ndump;
 static FILE *g_wav;
@@ -44,18 +45,6 @@ static uint32_t g_wav_n;
 __attribute__((noinline)) void m_frame(void){ __asm__ volatile(""); }
 __attribute__((noinline)) void m_pause(void){ __asm__ volatile(""); }
 __attribute__((noinline)) void m_resume(void){ __asm__ volatile(""); }
-
-static uint32_t crc32_upd(uint32_t c, const uint8_t *p, uint32_t n){
-    static uint32_t tab[256];
-    if (!tab[1])
-        for (uint32_t i = 0; i < 256; i++){
-            uint32_t v = i;
-            for (int k = 0; k < 8; k++) v = (v & 1u) ? (v >> 1) ^ 0xEDB88320u : v >> 1;
-            tab[i] = v;
-        }
-    while (n--) c = (c >> 8) ^ tab[(c ^ *p++) & 0xFFu];
-    return c;
-}
 
 #ifdef DG_HOST
 static void wav_hdr(FILE *f, uint32_t nsamp){
@@ -102,22 +91,14 @@ void DG_DrawFrame(void){
     m_pause();                                     /* 下面是测量用的附加活, 不计入 */
     g_frame++;
     if (g_crc){
-        uint32_t c = crc32_upd(0xFFFFFFFFu, (const uint8_t *)DG_ScreenBuffer, DGC_W * DGC_H);
-        for (int i = 0; i < 256; i++){
-            uint8_t rgb[3] = { (uint8_t)colors[i].r, (uint8_t)colors[i].g, (uint8_t)colors[i].b };
-            c = crc32_upd(c, rgb, 3);
-        }
-        printf("CRC %u %08x\n", (unsigned)g_frame, (unsigned)(c ^ 0xFFFFFFFFu));
+        uint32_t c = dg_frame_crc();
+        dg_crc_chain(&g_chain, c);
+        printf("CRC %u %08x\n", (unsigned)g_frame, (unsigned)c);
     }
     if ((uint32_t)g_rowcrc == g_frame){
-        uint32_t c = 0xFFFFFFFFu;
-        for (int i = 0; i < 256; i++){
-            uint8_t rgb[3] = { (uint8_t)colors[i].r, (uint8_t)colors[i].g, (uint8_t)colors[i].b };
-            c = crc32_upd(c, rgb, 3);
-        }
-        printf("PAL %08x\n", (unsigned)(c ^ 0xFFFFFFFFu));
+        printf("PAL %08x\n", (unsigned)dg_crc32(0, NULL, 0, 1));
         for (uint32_t y = 0; y < DGC_H; y++)
-            printf("ROW %u %08x\n", (unsigned)y, (unsigned)(crc32_upd(0xFFFFFFFFu, (const uint8_t *)DG_ScreenBuffer + y * DGC_W, DGC_W) ^ 0xFFFFFFFFu));
+            printf("ROW %u %08x\n", (unsigned)y, (unsigned)dg_crc32(0, (const uint8_t *)DG_ScreenBuffer + y * DGC_W, DGC_W, 0));
     }
 #ifdef DG_HOST
     for (int i = 0; i < g_ndump; i++) if ((uint32_t)g_dump[i] == g_frame) dump_ppm(g_frame);
@@ -143,6 +124,8 @@ uint32_t DG_GetTicksMs(void){ return g_vclock_ms; }
 int DG_GetKey(int *pressed, unsigned char *key){ (void)pressed; (void)key; return 0; }
 void DG_SetWindowTitle(const char *title){ (void)title; }
 
+static void print_chain(void){ printf("CRC 链 %08x %u\n", (unsigned)g_chain, (unsigned)g_frame); }
+
 static int take_arg(int *argc, char **argv, int i, int n){
     for (int k = i; k + n < *argc; k++) argv[k] = argv[k + n];
     *argc -= n;
@@ -155,7 +138,7 @@ int main(int argc, char **argv){
         if (!strcmp(argv[i], "-zonekb") && i + 1 < argc){ g_zonekb = atoi(argv[i + 1]); take_arg(&argc, argv, i, 2); }
         else if (!strcmp(argv[i], "-scale25")){ mode = DGC_SCALE25; take_arg(&argc, argv, i, 1); }
         else if (!strcmp(argv[i], "-maxframes") && i + 1 < argc){ g_maxframes = atoi(argv[i + 1]); take_arg(&argc, argv, i, 2); }
-        else if (!strcmp(argv[i], "-crc")){ g_crc = 1; take_arg(&argc, argv, i, 1); }
+        else if (!strcmp(argv[i], "-crc")){ g_crc = 1; atexit(print_chain); take_arg(&argc, argv, i, 1); }
         else if (!strcmp(argv[i], "-rowcrc") && i + 1 < argc){ g_rowcrc = atoi(argv[i + 1]); take_arg(&argc, argv, i, 2); }
 #ifdef DG_HOST
         else if (!strcmp(argv[i], "-dump") && i + 1 < argc){
