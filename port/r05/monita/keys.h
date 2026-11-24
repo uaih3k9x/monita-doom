@@ -1,4 +1,4 @@
-/*
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * CS80 前面板 4 键: 去抖 + 长按状态机 + PWRKEY 计数转电平 + KEY 消息载荷 (纯逻辑, 不碰硬件, 主机单测 test_keys.c)。
  * 硬件层在 ../io/keys_hw.h; 协议见 docs/protocol.md 的 KEY (0x90)。
  *

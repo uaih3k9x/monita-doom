@@ -2,9 +2,9 @@
 
 ## 复用清单
 
-`monita/` 下的文件**原样**拷自 Monita-CS80-lakala 仓库 `fw-audio` 分支提交
-`16070935162c0c6b4d3d285db06400651c01381c`（fw v13）。这几个文件全部由 Monita-CS80 维护者本人编写
-（`git log` 只有维护者一个作者）。按 GPL-2.0-or-later 放进本仓库**待维护者确认，确认前不公开**；Monita 仓库里它们仍按原协议。
+`monita/` 下的文件拷自 Monita-CS80-lakala 仓库 `fw-audio` 分支提交
+`16070935162c0c6b4d3d285db06400651c01381c`（fw v13），除在文件头首行并入一条 SPDX 许可标识外与上游逐字节一致。这几个文件全部由 Monita-CS80 维护者本人编写
+（`git log` 只有维护者一个作者）。作者已就这几份文件**双授权**，在本仓库按 GPL-2.0-or-later 一并授权（文件头 `SPDX-License-Identifier: GPL-2.0-or-later`）；Monita 仓库里它们仍按原协议（PolyForm Noncommercial）。
 不含任何原厂（拉卡拉 / 移远 / 紫光展锐）代码，只有维护者对照原厂调用点整理出的函数原型和常量。
 
 | 本仓库 | Monita 原路径 | 用途 |
@@ -20,9 +20,9 @@
 
 `dg_efs.h` 里 `ql_f*` 的用法（`"rb"`、返回 > 0 有效）照维护者的 extdump v2（真机跑过）。
 
-构建用的脚本（生成导入桩、打包 2PPA、静态校验）和 R05 导出表**不拷**：导出表是从原厂固件里提取的数据。
-`build.sh` 通过环境变量 `MONITA_FW` 指向一份 Monita 的 `fw/` 目录来调用它们。
-其中 `gen_stubs.py` 和 `pack.py` 直接决定产物，按 GPL 属于对应源码的一部分，公开发布二进制前要先解决（见根目录 README "许可证与出处"）。
+生成导入桩（`tools/r05_gen_stubs.py`）和打包 2PPA（`tools/r05_pack.py`）这两个直接决定产物、按 GPL 属于对应源码的脚本，
+**已在本仓库内按 GPL-2.0-or-later 重写**（读过 Monita 版后重写，不是逐字拷贝）：默认构建只用它们，不再依赖 `MONITA_FW`，产物与重写前逐字节一致。
+静态校验脚本 `validate.py` 和 R05 导出表仍**不拷**（导出表是从原厂固件里提取的数据）：只有设了 `MONITA_FW` 指向一份 Monita 的 `fw/` 时，`build.sh` 才调它核对 loader 规则 / 导入守卫，它不参与产物生成。
 
 ## 文件
 
@@ -33,4 +33,4 @@
 | `dg_r05.c` | 设备平台层：入口、任务、画面、计时、输入、喇叭、libc 后端 |
 | `app.ld` | 链接脚本 |
 | `doom.imports` / `doom_snd.imports` | 无声版 / 有声版导入清单 |
-| `build.sh` | 编译 + 打包 + 校验，产物 `build/r05/doom.bin`、`doom_snd.bin` |
+| `build.sh` | 编译 + 打包（可选校验），产物 `build/r05/doom.bin`、`doom_snd.bin`；打包 / 桩调 `tools/r05_pack.py`、`tools/r05_gen_stubs.py` |

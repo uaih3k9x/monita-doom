@@ -11,12 +11,15 @@ EC600U（UIS8910DM，Cortex-A5 约 500 MHz，单核，无浮点可用），原�
 - `doomgeneric/`：上游 doomgeneric commit `e257a09`（GPL-2.0），导入提交 `4d69656` 未改动；
   之后的改动都标了 `MONITA-DOOM` 注释（`grep -rn MONITA-DOOM doomgeneric`）。
 - `port/`、`qemu/`、`tools/`：本项目新写，GPL-2.0-or-later。
-- 从 Monita-CS80-lakala（PolyForm Noncommercial）复用的代码**只限维护者本人写的那部分**，逐个文件列在
-  `port/r05/README.md` 的"复用清单"里。这些文件按 GPL-2.0-or-later 放进本仓库**待维护者确认，确认前不公开**。
+- 从维护者本人的 Monita-CS80-lakala 仓库复用的代码**只限维护者本人写的那部分**，逐个文件列在
+  `port/r05/README.md` 的"复用清单"里。作者（维护者本人）已就这几份文件**双授权**：在本仓库按 **GPL-2.0-or-later** 一并授权
+  （每份文件头已加 `SPDX-License-Identifier: GPL-2.0-or-later`）；主 Monita 仓库仍是 PolyForm Noncommercial。
   拉卡拉 / 移远 / 紫光展锐的任何代码和素材都不在本仓库。
-- 构建设备 app 要用 Monita 仓库里的 `fw/sdk/gen_stubs.py`（生成导入桩）和 `pack.py`（打包 2PPA），以及 `validate.py`
-  和 R05 导出表（静态校验）；它们不在本仓库。按 GPL，分发二进制要能给出完整的对应源码（含构建脚本），
-  **公开发布前要先解决这个问题**（例如维护者把这两个脚本也授权进来，或在本仓库重写）。
+- 构建设备 app 的生成导入桩（`tools/r05_gen_stubs.py`）和打包 2PPA（`tools/r05_pack.py`）两个脚本，
+  **已在本仓库内按 GPL-2.0-or-later 重写**（读过 Monita 版后重写，非逐字拷贝）：默认构建 `sh port/r05/build.sh` 只用它们、不再依赖 `MONITA_FW`，
+  产物与重写前逐字节一致。
+- 可选的静态校验（Monita 的 `fw/sdk/validate.py` + R05 导出表）仍不在本仓库，只在设了 `MONITA_FW` 时才跑，用来核对 loader 规则 / 导入守卫，
+  它不参与产物生成（R05 导出表是从原厂固件提取的数据，不进本仓库）。
 - **WAD 不进仓库**（`.gitignore` 拦了 `*.wad`）。用原版共享版 `DOOM1.WAD` 或 Freedoom，自己准备。
 
 复用清单（从 Monita-CS80-lakala 拷入的文件）：见 `port/r05/README.md`。
@@ -48,7 +51,7 @@ sh qemu/run.sh <DOOM1.WAD> demo3         # QEMU 里跑 timedemo, 估帧率, 打�
 设备版：
 
 ```sh
-MONITA_FW=~/code/Monita-CS80-lakala-wt-audio/fw sh port/r05/build.sh   # -> build/r05/doom.bin（无声）、doom_snd.bin（有声），带静态校验
+sh port/r05/build.sh   # -> build/r05/doom.bin（无声）、doom_snd.bin（有声）；加 MONITA_FW=~/code/Monita-CS80-lakala-wt-audio/fw 前缀可另跑静态校验
 sh qemu/r05_run.sh <DOOM1.WAD> doom bench        # 假 R05 内核跑 doom.bin 本身：测速模式，打印 CRC 链，存 fb.ppm
 sh qemu/r05_run.sh <DOOM1.WAD> doom_snd maxms=20000   # 正常模式跑 20 s（虚拟时钟），看喇叭有没有被喂
 sh qemu/r05_run.sh - doom                        # 没有 WAD：应停在 E3
@@ -57,7 +60,7 @@ sh host/doomkeys/build.sh && build/doomkeys --selftest
 EXTFLASH_HOST=... python3 tools/tests/test_put_wad.py [DOOM1.WAD]  # 上传脚本对着 extdump v2 的内存假设备跑
 ```
 
-`MONITA_FW` 指向一份 Monita 仓库的 `fw/`，用它的生成导入桩、打包、loader 规则校验脚本和 R05 导出表（不拷进本仓库）。
+生成导入桩、打包用仓库自带的 `tools/r05_gen_stubs.py`、`tools/r05_pack.py`（GPL-2.0），默认构建不再需要 `MONITA_FW`；`MONITA_FW` 只在要跑可选的 loader 规则 / 导入守卫静态校验（Monita 的 `validate.py` + R05 导出表，不拷进本仓库）时才设。
 
 ## 对拍基准
 
@@ -187,8 +190,8 @@ QEMU 假内核跑 `doom.bin` 本身的结果（假内核按 Monita 笔记里的 
   ```
   应为 `1654d56e9c82364c4ab252b5c77a8a763be4ec41a34a95729786fe06431e10cf`。**对不上或者文件不在，就别往下做。**
 - 拷到 `..\dumps\`：`extdump_v2.bin`（sha256 `16264e24428640ca4bd70fd33be2bdeff3b35246d6fad113a46221494344e04e`）、
-  本仓库 `build/r05/doom.bin`（sha256 `44fcfaba1f7778c2992b65707addfece6e247b40805c31e623bbc1b1ea54768e`）、
-  `build/r05/doom_snd.bin`（sha256 `9eace9ebed8f8205829221a1d6664cebd0c9093cd066931d1277a67deeeaf263`），同样用 `certutil` 核对。
+  本仓库 `build/r05/doom.bin`（sha256 `6a13642527bf2bd7d38c1e3ed9ca530911041e1e26b4ea48089873dbef9d31f6`）、
+  `build/r05/doom_snd.bin`（sha256 `bb4b048680c9ed1fc4e7e0e8f49eb2c1dd20b10504179e8bd7d47b24dee1d979`），同样用 `certutil` 核对。
   构建里没有编进时间戳（源码里没有 `__DATE__` / `__TIME__`），干净重编逐字节相同；只改文档的提交不会让这两个值变。
 - 拷到 ThinkPad 任意目录：本仓库的 `tools/put_wad.py`、extdump v2 工具的 `host/` 整个目录、共享版 `DOOM1.WAD`
   （v1.9：sha1 `5b2e249b9c5133ec987b3ea77596381dc0d6bc1d`，sha256 `1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771`）。

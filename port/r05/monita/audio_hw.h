@@ -1,4 +1,4 @@
-/*
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * 喇叭硬件 (fw v13): 功放使能 + 内核 PCM 播放器, 给 link/audio.h 的 au_io_t 用。依据和等级见 docs/audio.md。
  *   功放: pin 15 -> func 4 = GPIO22, 输出, 高 = 开 (同原厂: 开机设成输出低, 开流前拉高, 关流后拉低)。
  *   PCM: ql_pcm_open({1 ch, 16000 Hz}, WRITE | NONBLOCK); 原厂用 WRITE | BLOCK, 我们在链路主循环里泵, 不能等,

@@ -1,4 +1,4 @@
-/*
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * 前面板 4 键的硬件层 (R05)。去抖/长按/PWRKEY 计数转电平都在 link/keys.h (主机单测)。
  * 实机证实 (2026-11-18, keydiag):
  *   键 | 位置      | 接法                          | 原厂用途

@@ -1,4 +1,4 @@
-/*
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Monita link 协议 v0 —— 纯逻辑部分 (CRC-32、流式拆帧、回包编码)。
  * 不依赖 R05 SDK, 主机上可以直接编译测试 (fw/link/test.sh)。协议说明见 docs/protocol.md。
  *

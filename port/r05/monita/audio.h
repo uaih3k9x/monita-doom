@@ -1,4 +1,4 @@
-/*
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * 喇叭 (fw v13, caps bit10): 主机透传 PCM -> 环形缓冲 -> 内核 PCM 播放器。协议见 docs/protocol.md "喇叭", 设计见 docs/audio.md。
  * 纯逻辑, 不碰 SDK: 硬件走 au_io_t (实机 fw/app.c: ql_pcm_* + 功放 GPIO; 模拟器 tools/fwsim/simdev.h; 单测 test_audio.c)。
  *

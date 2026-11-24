@@ -1,4 +1,4 @@
-// 拷自 Monita-CS80-lakala mac/Sources/monita-cs80/UsbLink.swift（fw-audio 1607093，同一维护者）。按 GPL-2.0-or-later 放进本仓库待维护者确认，确认前不公开。
+// 拷自 Monita-CS80-lakala mac/Sources/monita-cs80/UsbLink.swift（fw-audio 1607093，同一维护者）。作者已双授权，在本仓库按 GPL-2.0-or-later 一并授权（见下方 SPDX）。
 // 改动：去掉 LinkPort 协议和 MonitaCore 依赖、去掉按 Monita 协议探测的 openUsb / usbAnswersHello。
 // Copyright (C) 2026 Monita-CS80 维护者
 // SPDX-License-Identifier: GPL-2.0-or-later
