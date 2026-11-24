@@ -37,6 +37,10 @@ byte*	I_ZoneBase (int *size);
 // MONITA-DOOM: 原先静态的大数组在启动时用它分配 (清零; 失败 I_Error)
 void *DG_BigAlloc(size_t size, const char *what);
 
+// MONITA-DOOM: I_Error 的消息存一份到这里, 设备平台层 (port/r05/dg_r05.c) 出错退出时画到屏上
+// (日志走 iface 7 原始 USB 口, Windows 读不到); 只存第一条, 主机版 / QEMU 版不读。
+extern char dg_error_msg[512];
+
 boolean I_ConsoleStdout(void);
 
 

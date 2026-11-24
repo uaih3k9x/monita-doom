@@ -5,6 +5,8 @@
  *   - 记着每个句柄的当前位置, 顺序读不重复 seek; 出错后位置作废, 下次重新 seek;
  *   - ql_fread 一次给的可能比要的少 (没证实, 当它可能), 循环读满或读到 0。
  * 句柄约定照 extdump v2 (真机用过): ql_fopen 返回 > 0 有效。
+ *   - ql_fseek 是 lseek 风格: 成功返回新偏移量 (>=0, SEEK_SET 到 off 即返回 off), 出错 <0。
+ *     故这里按 "<0 才算失败" 判 (2026-11 真机实测: 返回新偏移导致 PNAMES not found, 已修)。
  *
  * Copyright (C) 2026 Monita-CS80 维护者
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -52,7 +54,7 @@ static inline int efs_read(int h, uint32_t off, void *buf, uint32_t n){
     if (off >= (uint32_t)g_efs_f[h].size) return 0;
     if (n > (uint32_t)g_efs_f[h].size - off) n = (uint32_t)g_efs_f[h].size - off;
     if (g_efs_f[h].pos != (int)off){
-        if (g_efs->seek(g_efs_f[h].fd, (int32_t)off, 0) != 0){ g_efs_f[h].pos = -1; return -1; }
+        if (g_efs->seek(g_efs_f[h].fd, (int32_t)off, 0) < 0){ g_efs_f[h].pos = -1; return -1; }
         g_efs_f[h].pos = (int)off;
     }
     uint32_t got = 0;

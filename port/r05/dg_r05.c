@@ -47,6 +47,7 @@
 
 #include "dg_link.h"
 #include "dg_efs.h"
+#include "dg_font.h"
 
 /* ---- EFS: 只读接口 (用法同 extdump v2, 真机跑过) ---- */
 extern int ql_spi6_ext_nor_flash_init(void);
@@ -78,32 +79,57 @@ static dgc_geom_t g_geom;
 static uint32_t now_us(void){ return (uint32_t)osiUpTimeUS(); }        /* 只做差 */
 static uint32_t now_ms(void){ return (uint32_t)(osiUpTimeUS() / 1000); }
 
-/* ---- 屏幕中间的状态大字 (3×5 点阵, 自绘) ---- */
-static const uint16_t g_font[] = {          /* 0-9 . E - : 每字 15 位, 行优先、高位在左上 */
-    075557, 026227, 071747, 071717, 055711, 074717, 074757, 071111, 075757, 075717, 000002, 074747, 000700,
-};
-static int glyph(char c){
-    if (c >= '0' && c <= '9') return c - '0';
-    return c == '.' ? 10 : c == 'E' ? 11 : c == '-' ? 12 : -1;
+/* ---- 屏幕上的自绘文字 (3×5 点阵, 字库 + 映射在 port/dg_font.h) ---- */
+/* 画一个字模: 左上角 (x0,y0), 每点 s×s 像素; 越界的像素跳过 (防万一, 只在出错路径走) */
+static void draw_glyph(int g, uint32_t x0, uint32_t y0, uint32_t s, uint16_t color){
+    if (g < 0) return;
+    uint16_t *fb = (uint16_t *)FB_ADDR;
+    for (uint32_t r = 0; r < 5; r++)
+        for (uint32_t c = 0; c < 3; c++){
+            if (!(dg_font[g] & (1u << (14u - (r * 3u + c))))) continue;
+            for (uint32_t yy = 0; yy < s; yy++)
+                for (uint32_t xx = 0; xx < s; xx++){
+                    uint32_t px_ = x0 + c * s + xx, py = y0 + r * s + yy;
+                    if (px_ < LCD_W && py < LCD_H) fb[py * LCD_W + px_] = color;
+                }
+        }
 }
+
+/* 屏幕下半部居中的状态大字 (E2/E3/E4/--/- 和测速帧率): 一点 24×24, 字距 1 点, 不挡游戏画面 */
 static void draw_status(const char *s, uint16_t color){
-    const uint32_t px = 24, cw = 4 * px;                    /* 一点 24×24 像素, 字距 1 点 */
-    uint32_t n = (uint32_t)strlen(s), w = n * cw, x0 = (LCD_W - w) / 2u, y0 = 1180u - 5u * px;   /* 屏幕下半部, 不挡游戏画面 */
+    const uint32_t px = 24, cw = 4 * px;
+    uint32_t n = (uint32_t)strlen(s), w = n * cw, x0 = (LCD_W - w) / 2u, y0 = 1180u - 5u * px;
     uint16_t *fb = (uint16_t *)FB_ADDR;
     for (uint32_t y = y0; y < y0 + 5u * px; y++)
         for (uint32_t x = 0; x < LCD_W; x++) fb[y * LCD_W + x] = 0;
-    for (uint32_t i = 0; i < n; i++){
-        int g = glyph(s[i]);
-        if (g < 0) continue;
-        for (uint32_t r = 0; r < 5; r++)
-            for (uint32_t c = 0; c < 3; c++){
-                if (!(g_font[g] & (1u << (14u - (r * 3u + c))))) continue;
-                for (uint32_t yy = 0; yy < px; yy++)
-                    for (uint32_t xx = 0; xx < px; xx++)
-                        fb[(y0 + r * px + yy) * LCD_W + x0 + i * cw + c * px + xx] = color;
-            }
-    }
+    for (uint32_t i = 0; i < n; i++)
+        draw_glyph(dg_glyph(s[i]), x0 + i * cw, y0, px, color);
     dcache_clean(FB_ADDR + y0 * LCD_W * 2u, 5u * px * LCD_W * 2u);
+}
+
+/* 出错退出 (E4) 时整屏画 I_Error 的原因: 顶行红色大 "E4", 下面小字逐字铺开 (字库里没有的字节画实心块)。
+ * 原因走 iface 7 原始 USB 口的日志, Windows 上读不到, 所以画到屏上。放不下就截断 (不翻页)。 */
+#define ERR_DOT   6u                                         /* 消息每点 6×6 像素 */
+#define ERR_ADV   (4u * ERR_DOT)                             /* 字距: 3 点字宽 + 1 点空 */
+#define ERR_LH    (6u * ERR_DOT)                             /* 行距: 5 点字高 + 1 点空 */
+#define ERR_X0    20u
+#define ERR_Y0    (40u + 6u * 20u + 24u)                     /* 顶部 "E4" (每点 20px) 下方 */
+struct err_ctx { uint16_t color; };
+static void err_cell(void *vc, int col, int row, int g){
+    draw_glyph(g, ERR_X0 + (uint32_t)col * ERR_ADV, ERR_Y0 + (uint32_t)row * ERR_LH, ERR_DOT, ((struct err_ctx *)vc)->color);
+}
+static void draw_error(int code, const char *msg){
+    fb_fill(0x0000);                                         /* 整屏清黑 (已 dcache_clean) */
+    draw_glyph(dg_glyph('E'), 40u, 40u, 20u, 0xF800);        /* 顶行: 大号红 "E4" */
+    draw_glyph(dg_glyph('4'), 40u + 4u * 20u, 40u, 20u, 0xF800);
+    char fallback[24];
+    const char *m = msg && msg[0] ? msg : fallback;          /* 没有消息 (assert / 直接 exit) 时至少画出退出码 */
+    if (m == fallback) snprintf(fallback, sizeof fallback, "EXIT CODE %d", code);
+    int cols = (int)((LCD_W - 2u * ERR_X0) / ERR_ADV);
+    int rows = (int)((LCD_H - ERR_Y0 - 4u) / ERR_LH);
+    struct err_ctx c = { 0xFFFF };
+    dg_text_layout(m, cols, rows, err_cell, &c);
+    dcache_clean(FB_ADDR, FB_SIZE);
 }
 
 /* ---- USB / 按键 / 喇叭 / 看门狗: 在 Doom 的回调里顺手做 ---- */
@@ -186,11 +212,10 @@ static void poll_io(void){
 }
 
 /* 停在这里: 屏上留着状态, 照样喂狗、照样回 USB (主机能把日志读走), 等人来重刷 / 断电 */
+static void halt_spin(void) __attribute__((noreturn));
+static void halt_spin(void){ for (;;){ poll_io(); ql_rtos_task_sleep_ms(20); } }
 static void halt(const char *status, uint16_t color) __attribute__((noreturn));
-static void halt(const char *status, uint16_t color){
-    draw_status(status, color);
-    for (;;){ poll_io(); ql_rtos_task_sleep_ms(20); }
-}
+static void halt(const char *status, uint16_t color){ draw_status(status, color); halt_spin(); }
 
 /* ---- port/libc 的后端 ---- */
 void dgl_log_write(const char *s, size_t n){ dl_log(&g_link, s, n); }
@@ -215,7 +240,11 @@ void dgl_exit(int code){
         halt(s, 0x07E0);
     }
     printf("exit %d\n", code);
-    halt(code ? "E4" : "0", code ? 0xF800 : 0xFFFF);
+    if (code){                                               /* 出错退出 (Doom 的 I_Error): 把原因画到屏上, 保留 E4 */
+        draw_error(code, dg_error_msg);
+        halt_spin();
+    }
+    halt("0", 0xFFFF);
 }
 
 /* 内核 malloc 没有 realloc / 不知道块大小: 每块前面 8 字节记大小 (保持内核给的对齐) */

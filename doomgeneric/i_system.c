@@ -369,6 +369,9 @@ static int ZenityErrorBox(char *message)
 
 static boolean already_quitting = false;
 
+// MONITA-DOOM: I_Error 的消息存一份给设备平台层画到屏上 (见 i_system.h / dg_r05.c)
+char dg_error_msg[512];
+
 void I_Error (char *error, ...)
 {
     char msgbuf[512];
@@ -401,6 +404,10 @@ void I_Error (char *error, ...)
     memset(msgbuf, 0, sizeof(msgbuf));
     M_vsnprintf(msgbuf, sizeof(msgbuf), error, argptr);
     va_end(argptr);
+
+    // MONITA-DOOM: 把这条消息留给设备平台层画到屏上; 只存第一条 (递归 I_Error 不覆盖)
+    if (dg_error_msg[0] == '\0')
+        M_StringCopy(dg_error_msg, msgbuf, sizeof(dg_error_msg));
 
     // Shutdown. Here might be other errors.
 
